@@ -1,20 +1,15 @@
-# Render Blueprint — deploys Astroman as a Docker web service with a persistent
-# disk for the SQLite database. Commit this file, then on render.com choose
-# New → Blueprint and point it at the repo. Fill the two secret vars when asked.
+# Render Blueprint — deploys Astroman as a Docker web service. Accounts and
+# saved people live in Supabase Postgres, so no persistent disk is needed.
+# Commit this file, then on render.com choose New → Blueprint and point it at
+# the repo. Fill the secret vars when prompted.
 services:
   - type: web
     name: astroman
     runtime: docker
-    plan: starter            # a paid instance is required to attach a disk
+    plan: free               # no disk needed → the free tier works (spins down when idle)
     healthCheckPath: /healthz
     autoDeploy: true
-    disk:
-      name: astroman-data    # persists /data (the SQLite DB) across deploys
-      mountPath: /data
-      sizeGB: 1
     envVars:
-      - key: DATA_DIR
-        value: /data
       - key: COOKIE_SECURE
         value: "true"
       - key: SESSION_SECRET
@@ -24,4 +19,8 @@ services:
       - key: AZURE_INFERENCE_ENDPOINT
         sync: false          # set in the dashboard (not committed)
       - key: AZURE_INFERENCE_KEY
-        sync: false          # set in the dashboard (not committed)
+        sync: false
+      - key: SUPABASE_URL
+        sync: false          # Supabase → Settings → API → Project URL
+      - key: SUPABASE_SERVICE_KEY
+        sync: false          # Supabase → Settings → API → service_role key (keep secret)

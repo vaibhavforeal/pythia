@@ -11,7 +11,8 @@ const {
 const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
-const { users, people } = require("./store");
+const store = require("./store");
+const { users, people } = store;
 
 // --- Azure AI Foundry config -------------------------------------------------
 // Claude is served through Foundry's Anthropic-native Messages API. The chat
@@ -71,9 +72,9 @@ app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
     if (typeof password !== "string" || password.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters." });
     }
-    if (users.findByUsername(u)) return res.status(409).json({ error: "That username is taken." });
+    if (await users.findByUsername(u)) return res.status(409).json({ error: "That username is taken." });
     const { salt, hash } = await auth.hashPassword(password);
-    const user = users.add({ id: crypto.randomUUID(), username: u, salt, hash, createdAt: new Date().toISOString() });
+    const user = await users.add({ id: crypto.randomUUID(), username: u, salt, hash, createdAt: new Date().toISOString() });
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
     res.json({ user: { id: user.id, username: user.username } });
   } catch (err) {
@@ -85,7 +86,7 @@ app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
 app.post("/api/auth/login", auth.rateLimit, async (req, res) => {
   try {
     const { username, password } = req.body || {};
-    const user = users.findByUsername(String(username || "").trim());
+    const user = await users.findByUsername(String(username || "").trim());
     const ok = user && (await auth.verifyPassword(String(password || ""), user.salt, user.hash));
     if (!ok) return res.status(401).json({ error: "Invalid username or password." });
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
@@ -101,21 +102,33 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/auth/me", (req, res) => {
-  const uid = auth.currentUserId(req);
-  const user = uid && users.findById(uid);
-  if (!user) return res.status(401).json({ error: "Not authenticated." });
-  res.json({ user: { id: user.id, username: user.username } });
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const uid = auth.currentUserId(req);
+    const user = uid ? await users.findById(uid) : null;
+    if (!user) return res.status(401).json({ error: "Not authenticated." });
+    res.json({ user: { id: user.id, username: user.username } });
+  } catch (err) {
+    console.error("me error:", err);
+    res.status(500).json({ error: "Lookup failed." });
+  }
 });
 
 // --- Saved people (per user) ------------------------------------------------
-app.get("/api/people", (req, res) => res.json({ people: people.forUser(req.userId) }));
+app.get("/api/people", async (req, res) => {
+  try {
+    res.json({ people: await people.forUser(req.userId) });
+  } catch (err) {
+    console.error("list people error:", err);
+    res.status(500).json({ error: "Could not load saved people." });
+  }
+});
 
-app.post("/api/people", (req, res) => {
+app.post("/api/people", async (req, res) => {
   try {
     const b = req.body || {};
     const birth = parseBirth(b); // validates the birth fields (throws HttpError)
-    const person = people.add({
+    const person = await people.add({
       id: crypto.randomUUID(),
       userId: req.userId,
       name: String(b.name || "").trim().slice(0, 80) || "Unnamed",
@@ -131,8 +144,13 @@ app.post("/api/people", (req, res) => {
   }
 });
 
-app.delete("/api/people/:id", (req, res) => {
-  res.json({ ok: people.remove(req.userId, req.params.id) });
+app.delete("/api/people/:id", async (req, res) => {
+  try {
+    res.json({ ok: await people.remove(req.userId, req.params.id) });
+  } catch (err) {
+    console.error("delete person error:", err);
+    res.status(500).json({ error: "Delete failed." });
+  }
 });
 
 // --- Geocoding (live city search → lat/lon + standard UTC offset) -----------
@@ -379,6 +397,7 @@ function parseBirth(b) {
 
 app.listen(PORT, () => {
   console.log(`\n  ✨ Astroman running at http://localhost:${PORT}`);
+  console.log(`  ℹ  Data store: ${store.name}`);
   if (!ENDPOINT || !API_KEY) {
     console.log(
       "  ⚠  Azure AI Foundry not configured — set AZURE_INFERENCE_ENDPOINT and " +

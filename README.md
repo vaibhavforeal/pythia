@@ -34,7 +34,7 @@ search reach the internet — the city search falls back to a built-in list offl
 
 ## Setup
 
-Requires **Node.js 22.5+** (the accounts store uses the built-in `node:sqlite`).
+Requires **Node.js 18+**.
 
 ```bash
 # 1. install dependencies (sweph ships prebuilt binaries — no compiler needed on most systems)
@@ -51,8 +51,9 @@ Open **http://localhost:3030**, create an account, cast your chart, and start as
 
 > **Accounts:** the app is behind a login (multi-user). Set `SESSION_SECRET` in
 > `.env` so sessions survive restarts, and set `COOKIE_SECURE=true` when serving
-> over HTTPS. Accounts and saved charts live in `server/data/*.json` (gitignored);
-> passwords are scrypt-hashed. This build assumes a single server instance.
+> over HTTPS. Passwords are scrypt-hashed. Accounts and saved charts are stored
+> in **Supabase Postgres** when `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` are set,
+> otherwise in local JSON files under `server/data/` (fine for offline dev).
 
 > The chat step calls **Claude via Azure AI Foundry's Anthropic Messages API** —
 > set `AZURE_INFERENCE_ENDPOINT` to the full messages URL
@@ -104,7 +105,7 @@ server/
   gunamilan.js Ashtakoot Guna Milan (36-guna compatibility)
   yogas.js    detects named yogas (Mahapurusha, Raja, Dhana, lunar, Kala Sarpa…)
   auth.js     accounts — scrypt hashing + signed session cookies + rate limit
-  store.js    JSON persistence for users and saved people (server/data/)
+  store.js    users + saved people — Supabase Postgres, or local JSON fallback
   cities.js   built-in city gazetteer (offline geocoding fallback)
   skill.js    loads the Vedic system prompt
 public/
@@ -117,29 +118,36 @@ Vedic Astrology Skill.md   the practitioner system prompt (drives the readings)
 ## Deploying online
 
 The app needs a **persistent Node process** (not edge/serverless): it uses a
-native ephemeris module, streams the chat over SSE, and stores accounts in
-SQLite. A managed **Docker host with a small persistent disk** is the simplest
-fit. The repo ships a `Dockerfile` and a Render blueprint.
+native ephemeris module and streams the chat over SSE, so **Vercel / Netlify /
+Cloudflare Workers won't run it.** Use a managed **Docker host** (Render /
+Railway / Fly) with **Supabase Postgres** for accounts — no persistent disk
+required. The repo ships a `Dockerfile`, a Render blueprint, and `supabase/schema.sql`.
 
-**Render:**
+**1. Supabase (database):**
+
+- Create a project at [supabase.com](https://supabase.com).
+- **SQL Editor** → paste `supabase/schema.sql` → **Run** (creates the tables).
+- **Settings → API** → copy the **Project URL** and the **`service_role` key**
+  (server-side only, keep it secret).
+
+**2. Render (app):**
 
 1. Push this repo to GitHub.
 2. On [render.com](https://render.com) → **New → Blueprint**, select the repo.
-   The included `render.yaml` provisions a Docker web service plus a 1 GB disk
-   mounted at `/data`, sets `COOKIE_SECURE=true` and `DATA_DIR=/data`, and
-   auto-generates `SESSION_SECRET`.
-3. When prompted, set the two secrets — `AZURE_INFERENCE_ENDPOINT` and
-   `AZURE_INFERENCE_KEY` (adjust `AZURE_DEPLOYMENT` if needed).
+   `render.yaml` provisions a Docker web service (free tier — no disk),
+   sets `COOKIE_SECURE=true`, and auto-generates `SESSION_SECRET`.
+3. Set the secrets when prompted: `AZURE_INFERENCE_ENDPOINT`, `AZURE_INFERENCE_KEY`,
+   `SUPABASE_URL`, and `SUPABASE_SERVICE_KEY`.
 4. Deploy. Render serves it over HTTPS; the health check is `/healthz`.
 
-**Railway / Fly / any Docker host:** build the `Dockerfile`, mount a volume at
-`/data`, and set the env vars (`SESSION_SECRET`, `COOKIE_SECURE=true`,
-`DATA_DIR=/data`, and the `AZURE_*` vars). The host's injected `PORT` is used
-automatically.
+**Railway / Fly / any Docker host:** build the `Dockerfile` and set the same env
+vars (`SESSION_SECRET`, `COOKIE_SECURE=true`, the `AZURE_*` and `SUPABASE_*`
+vars). The host's injected `PORT` is used automatically.
 
-The SQLite database (accounts + saved charts) lives at `$DATA_DIR/astroman.db`
-— keep it on the persistent disk so it survives redeploys. This build assumes a
-**single instance** (the DB isn't shared across replicas).
+Without `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`, the store falls back to local
+JSON files under `server/data/` — handy for offline dev, but *don't* rely on it
+in production (managed hosts have ephemeral disks). This build assumes a single
+instance for session/rate-limit state.
 
 ## Notes & limits
 
