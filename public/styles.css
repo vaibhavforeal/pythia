@@ -487,8 +487,8 @@ button {
 }
 
 /* ---------- Responsive: stack + compact on small screens ---------- */
-/* Mobile drawer controls — hidden on desktop */
-.panel-toggle, .panel-scrim { display: none; }
+/* Mobile drawer controls + branding bar — hidden on desktop */
+.panel-toggle, .panel-scrim, .mobile-bar { display: none; }
 
 @media (max-width: 820px) {
   /* fixed backgrounds jank on mobile Safari — let it scroll with content;
@@ -508,12 +508,28 @@ button {
     box-shadow: 4px 0 28px rgba(20, 50, 80, 0.22);
   }
   .app.panel-open .panel { transform: translateX(0); }
-  .brand { display: none; }              /* logo lives on desktop only */
+  .brand { display: none; }              /* the sidebar's own logo lives on desktop only */
   .panel-scroll { padding: 54px 14px 18px; }   /* top clears the floating hamburger */
+
+  /* Fixed branding bar across the top — always visible once signed in, so
+     closing the drawer reveals the chat under a pinned Astroman header. It sits
+     below the scrim (z 190) so a tap anywhere on it also closes an open drawer. */
+  .mobile-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 180;
+    display: flex; align-items: center; gap: 9px;
+    height: 52px; padding: 0 14px 0 62px;  /* left padding clears the floating hamburger */
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 10px rgba(20, 50, 80, 0.06);
+  }
+  .mobile-bar .brand-mark { width: 30px; height: 30px; font-size: 16px; }
+  .mobile-bar h1 {
+    margin: 0; font-family: var(--font-head); font-size: 17px;
+    font-weight: 600; letter-spacing: 0.2px; color: var(--ink);
+  }
 
   /* Hamburger toggle + backdrop */
   .panel-toggle {
-    position: fixed; top: 10px; left: 10px; z-index: 210;
+    position: fixed; top: 5px; left: 10px; z-index: 210;
     width: 42px; height: 42px; display: grid; place-items: center;
     font-size: 18px; color: var(--on-accent); background: var(--sky);
     border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);
@@ -527,8 +543,8 @@ button {
   }
   .app.panel-open .panel-scrim { pointer-events: auto; }
 
-  /* Chat gutters; keep content clear of the floating hamburger */
-  .chat-scroll { padding: 60px 0 18px; }
+  /* Chat gutters; keep content clear of the fixed top bar */
+  .chat-scroll { padding: 64px 0 18px; }
   .msg { padding: 0 14px; gap: 10px; }
   .suggestions, .composer { padding-left: 14px; padding-right: 14px; }
   .welcome { margin-top: 6vh; }

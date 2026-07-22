@@ -45,6 +45,7 @@ const pad = n => String(n).padStart(2, "0");
 const appEl = document.querySelector(".app");
 const panelToggle = $("panelToggle");
 const panelScrim = $("panelScrim");
+const mobileBar = $("mobileBar");
 function setPanelOpen(open) {
   appEl.classList.toggle("panel-open", open);
   panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -691,6 +692,7 @@ function showAuth() {
   $("authPass").value = "";
   authOverlay.hidden = false;
   panelToggle.hidden = true; // keep the drawer toggle off the login screen
+  if (mobileBar) mobileBar.hidden = true; // and the branding bar (login has its own)
   setPanelOpen(false);
   $("authUser").focus();
 }
@@ -702,6 +704,7 @@ function onAuthed(user) {
   peopleCard.hidden = false;
   convCard.hidden = false;
   panelToggle.hidden = false; // reveal the mobile drawer toggle
+  if (mobileBar) mobileBar.hidden = false; // and the fixed mobile branding bar
   loadPeople();
   loadConversations();
 }
