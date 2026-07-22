@@ -140,8 +140,34 @@ setInterval(() => {
   for (const [ip, rec] of attempts) if (now > rec.resetAt) attempts.delete(ip);
 }, RL_WINDOW_MS).unref();
 
+// Generic fixed-window limiter keyed by whatever `key(req)` returns (e.g. userId).
+// Used to throttle the chat per user. In-memory → single-instance only.
+function rateLimiter({ windowMs, max, key, message }) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, rec] of hits) if (now > rec.resetAt) hits.delete(k);
+  }, Math.min(windowMs, 60 * 60 * 1000)).unref();
+
+  return (req, res, next) => {
+    const k = key(req);
+    if (!k) return next(); // no identity → let auth handle it
+    const now = Date.now();
+    let rec = hits.get(k);
+    if (!rec || now > rec.resetAt) {
+      rec = { count: 0, resetAt: now + windowMs };
+      hits.set(k, rec);
+    }
+    if (++rec.count > max) {
+      res.setHeader("Retry-After", String(Math.ceil((rec.resetAt - now) / 1000)));
+      return res.status(429).json({ error: message || "Too many requests — please slow down." });
+    }
+    next();
+  };
+}
+
 module.exports = {
   hashPassword, verifyPassword, makeSessionToken,
   setSessionCookie, clearSessionCookie, currentUserId,
-  requireAuth, checkOrigin, rateLimit, ephemeralSecret, SECURE
+  requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE
 };

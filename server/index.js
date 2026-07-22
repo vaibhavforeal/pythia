@@ -232,7 +232,22 @@ app.post("/api/match", (req, res) => {
 });
 
 // --- Chat (streamed via SSE) ------------------------------------------------
-app.post("/api/chat", async (req, res) => {
+// Per-user rate limits on the chat (the paid LLM call): a per-minute burst cap
+// and a daily cap. Tune with CHAT_RPM / CHAT_RPD env vars.
+const chatBurstLimit = auth.rateLimiter({
+  windowMs: 60 * 1000,
+  max: Number(process.env.CHAT_RPM) || 20,
+  key: req => req.userId,
+  message: "You're sending messages too quickly — give it a few seconds and try again."
+});
+const chatDailyLimit = auth.rateLimiter({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: Number(process.env.CHAT_RPD) || 300,
+  key: req => req.userId,
+  message: "You've reached today's chat limit. Please try again tomorrow."
+});
+
+app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
   const { messages, chart, match } = req.body || {};
   if (!Array.isArray(messages) || !messages.length) {
     return res.status(400).json({ error: "No messages provided." });
