@@ -534,6 +534,9 @@ button {
     font-size: 18px; color: var(--on-accent); background: var(--sky);
     border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);
   }
+  /* Once the drawer is open it stays out of the way — close it by tapping the
+     chat or the branding bar. This also keeps it off the scrolling sidebar. */
+  .app.panel-open .panel-toggle { display: none; }
   /* Transparent tap-catcher over the chat: no dimming, but tapping the chat
      while the drawer is open closes the drawer. */
   .panel-scrim {
