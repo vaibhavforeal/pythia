@@ -54,6 +54,13 @@ app.use(express.static(path.join(__dirname, "..", "public")));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 // --- Auth gate --------------------------------------------------------------
+// API responses are dynamic and auth-sensitive — never cache them (this also
+// avoids 304 Not Modified responses, which carry no body for the client to read).
+app.use("/api", (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // Every /api route except /api/auth/* requires a valid session, and every
 // mutating request must be same-origin. Static assets (the SPA shell) stay
 // public so the login screen can load.
