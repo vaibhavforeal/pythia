@@ -598,7 +598,25 @@ async function sendMessage(text) {
 
   const body = addMessage("assistant", "");
   body.classList.add("cursor");
-  let acc = "";
+  let acc = "";   // full received text (source of truth for history)
+  let shown = 0;  // chars currently revealed on screen
+  let raf = null;
+
+  // Smoothly reveal received text at a steady, self-adjusting pace, capping
+  // markdown re-parsing to one animation frame instead of once per streamed
+  // token — this removes the flicker/jank of re-rendering on every chunk.
+  const pump = () => {
+    raf = null;
+    const backlog = acc.length - shown;
+    if (backlog > 0) {
+      shown = Math.min(acc.length, shown + Math.max(2, Math.ceil(backlog / 4)));
+      const stick = isNearBottom();
+      renderMarkdown(body, acc.slice(0, shown));
+      if (stick) scrollDown();
+    }
+    if (shown < acc.length) raf = requestAnimationFrame(pump);
+  };
+  const schedule = () => { if (raf == null) raf = requestAnimationFrame(pump); };
 
   try {
     const res = await fetch("/api/chat", {
@@ -631,25 +649,23 @@ async function sendMessage(text) {
         let obj;
         try { obj = JSON.parse(line); } catch { continue; }
 
-        const stick = isNearBottom(); // decide before the DOM grows
         if (obj.text) {
           acc += obj.text;
-          renderMarkdown(body, acc);
-          if (stick) scrollDown();
+          schedule();
         } else if (obj.error) {
           acc += (acc ? "\n\n" : "") + "⚠️ " + obj.error;
-          renderMarkdown(body, acc);
-          if (stick) scrollDown();
+          schedule();
         }
       }
     }
   } catch (err) {
     acc += (acc ? "\n\n" : "") + "⚠️ " + err.message;
-    renderMarkdown(body, acc);
   } finally {
+    if (raf != null) { cancelAnimationFrame(raf); raf = null; }
     const stick = isNearBottom();
     body.classList.remove("cursor");
-    renderMarkdown(body, acc || "*(no response)*");
+    renderMarkdown(body, acc || "*(no response)*"); // ensure the full text is shown
+    shown = acc.length;
     if (acc) history.push({ role: "assistant", content: acc });
     streaming = false;
     sendBtn.disabled = false;
