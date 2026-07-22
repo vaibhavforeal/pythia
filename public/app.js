@@ -35,6 +35,17 @@ let authMode = "login";
 let peopleById = {};
 const pad = n => String(n).padStart(2, "0");
 
+// Mobile slide-in drawer for the chart / compatibility panel (no effect on desktop)
+const appEl = document.querySelector(".app");
+const panelToggle = $("panelToggle");
+const panelScrim = $("panelScrim");
+function setPanelOpen(open) {
+  appEl.classList.toggle("panel-open", open);
+  panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+panelToggle.addEventListener("click", () => setPanelOpen(!appEl.classList.contains("panel-open")));
+panelScrim.addEventListener("click", () => setPanelOpen(false));
+
 if (window.marked) {
   marked.setOptions({ breaks: true, gfm: true });
 }
@@ -576,6 +587,7 @@ function isNearBottom() {
 
 async function sendMessage(text) {
   if (streaming || !chart) return;
+  setPanelOpen(false); // on mobile, close the drawer so the reply is visible
   streaming = true;
   input.value = "";
   input.style.height = "auto";
@@ -652,6 +664,8 @@ function showAuth() {
   applyAuthMode();
   $("authPass").value = "";
   authOverlay.hidden = false;
+  panelToggle.hidden = true; // keep the drawer toggle off the login screen
+  setPanelOpen(false);
   $("authUser").focus();
 }
 
@@ -660,6 +674,7 @@ function onAuthed(user) {
   account.hidden = false;
   $("accountName").textContent = user.username;
   peopleCard.hidden = false;
+  panelToggle.hidden = false; // reveal the mobile drawer toggle
   loadPeople();
 }
 
