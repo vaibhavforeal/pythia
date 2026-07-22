@@ -14,6 +14,9 @@ services:
         value: "true"
       - key: SESSION_SECRET
         generateValue: true  # Render generates a strong secret once
+      - key: CANONICAL_HOST
+        sync: false          # set to your custom domain (e.g. pythia.cyou) once its DNS is live
+                             # — 301s the onrender.com URL + www to it. Leave unset until then.
       - key: AZURE_DEPLOYMENT
         value: claude-opus-4-8-2
       - key: AZURE_INFERENCE_ENDPOINT
@@ -30,4 +33,5 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        sync: false          # https://<your-app>.onrender.com/api/auth/google/callback
+        sync: false          # optional — pin to https://pythia.cyou/api/auth/google/callback
+                             # once CANONICAL_HOST is set; otherwise it's derived from the host

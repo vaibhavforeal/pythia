@@ -63,6 +63,26 @@ const MATCH_NOTE =
   "explain what they mean together — warmly and honestly, without sugar-coating real doshas.";
 
 const app = express();
+
+// Optional canonical-host redirect. Once a custom domain is live, set
+// CANONICAL_HOST (e.g. "pythia.cyou") to 301 every other host — the
+// onrender.com URL, www, etc. — to it. Keeping a single origin means the
+// session cookie and the OAuth `state` cookie are always set and read on the
+// same domain. Health checks are exempt; it's a no-op when unset.
+const CANONICAL_HOST = (process.env.CANONICAL_HOST || "").trim().toLowerCase();
+if (CANONICAL_HOST) {
+  app.use((req, res, next) => {
+    if (req.path === "/healthz") return next();
+    const host = String(req.headers["x-forwarded-host"] || req.headers.host || "")
+      .toLowerCase().split(":")[0];
+    if (host && host !== CANONICAL_HOST) {
+      const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
+      return res.redirect(301, `${proto}://${CANONICAL_HOST}${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
