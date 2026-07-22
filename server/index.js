@@ -24,7 +24,7 @@ const { users, people } = store;
 //   AZURE_DEPLOYMENT          the deployed model name (e.g. your Claude deployment)
 const ENDPOINT = process.env.AZURE_INFERENCE_ENDPOINT;
 const API_KEY = process.env.AZURE_INFERENCE_KEY;
-const MODEL = process.env.AZURE_DEPLOYMENT || process.env.ASTROMAN_MODEL || "claude-opus-4-8";
+const MODEL = process.env.AZURE_DEPLOYMENT || process.env.ASTROMAN_MODEL || "claude-opus-4-8-2";
 const PORT = process.env.PORT || 3030;
 
 const SKILL_PROMPT = loadSkill();

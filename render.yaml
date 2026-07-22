@@ -15,7 +15,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true  # Render generates a strong secret once
       - key: AZURE_DEPLOYMENT
-        value: claude-opus-4-8
+        value: claude-opus-4-8-2
       - key: AZURE_INFERENCE_ENDPOINT
         sync: false          # set in the dashboard (not committed)
       - key: AZURE_INFERENCE_KEY
