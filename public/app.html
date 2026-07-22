@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pythia · Vedic Astrology Guide</title>
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="apple-touch-icon" href="favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <button type="button" id="panelToggle" class="panel-toggle" aria-label="Show chart panel" aria-expanded="false" hidden>☰</button>
+      <div id="panelScrim" class="panel-scrim"></div>
+      <!-- Fixed branding bar for mobile (the sidebar's own logo is hidden there) -->
+      <header id="mobileBar" class="mobile-bar" hidden>
+        <img class="brand-mark" src="logo.png" alt="Pythia" />
+        <h1>Pythia</h1>
+      </header>
+      <!-- ===== Left panel: birth details + chart ===== -->
+      <aside class="panel" id="panel">
+        <div class="brand">
+          <img class="brand-mark" src="logo.png" alt="Pythia" />
+          <div>
+            <h1>Pythia</h1>
+            <p class="tag">Jyotish &amp; numerology guide</p>
+          </div>
+        </div>
+
+        <div class="panel-scroll">
+        <div class="account" id="account" hidden>
+          <span class="account-user">Signed in as <b id="accountName"></b></span>
+          <button type="button" id="logoutBtn" class="logout">Log out</button>
+        </div>
+
+        <form id="birthForm" class="birth-form">
+          <h2>Birth details</h2>
+
+          <label>Name (optional)
+            <input type="text" id="name" maxlength="80" placeholder="e.g. Vaibhav" autocomplete="off" />
+            <small>Used for name numerology and saved charts.</small>
+          </label>
+
+          <label>Date of birth
+            <input type="date" id="dob" required />
+          </label>
+
+          <label>Time of birth
+            <input type="time" id="tob" step="60" required />
+            <small>Local time at the birthplace. Unknown? Use 12:00 &amp; note it.</small>
+          </label>
+
+          <label>Place (type to search)
+            <input list="cityList" id="city" placeholder="Type a city name…" autocomplete="off" />
+            <datalist id="cityList"></datalist>
+            <small>Pick a match to auto-fill latitude, longitude &amp; UTC offset.</small>
+          </label>
+
+          <div class="row">
+            <label>Latitude
+              <input type="number" id="lat" step="0.0001" placeholder="e.g. 28.6139" required />
+            </label>
+            <label>Longitude
+              <input type="number" id="lon" step="0.0001" placeholder="e.g. 77.2090" required />
+            </label>
+          </div>
+
+          <label>UTC offset (hours)
+            <input type="number" id="tz" step="0.25" placeholder="e.g. 5.5" required />
+            <small>Standard time offset. Add +1 if born during daylight saving.</small>
+          </label>
+
+          <button type="submit" id="computeBtn">Cast chart</button>
+          <p class="err" id="formErr" hidden></p>
+        </form>
+
+        <div id="peopleCard" class="people-card" hidden>
+          <div class="aspects-title">Saved people
+            <button type="button" id="savePersonBtn" class="save-person" disabled title="Save the current birth details">★ Save current</button>
+          </div>
+          <ul id="peopleList" class="people-list"></ul>
+          <div class="people-empty" id="peopleEmpty">No saved charts yet — cast one, then “Save current”.</div>
+          <p class="err" id="peopleErr" hidden></p>
+        </div>
+
+        <div id="convCard" class="people-card" hidden>
+          <div class="aspects-title">Saved chats
+            <button type="button" id="newChatBtn" class="save-person" disabled title="Start a new chat about the current chart">＋ New</button>
+          </div>
+          <ul id="convList" class="people-list conv-list"></ul>
+          <div class="people-empty" id="convEmpty">No saved chats yet — ask something and it's saved here.</div>
+        </div>
+
+        <div id="chartCard" class="chart-card" hidden></div>
+
+        <!-- ===== Guna Milan (Ashtakoot compatibility) ===== -->
+        <div id="matchCard" class="match-card" hidden>
+          <h3>Guna Milan · compatibility</h3>
+          <form id="matchForm" class="match-form">
+            <div class="role-toggle">
+              <span>Your chart is the</span>
+              <label><input type="radio" name="primaryRole" value="groom" checked /> groom ♂</label>
+              <label><input type="radio" name="primaryRole" value="bride" /> bride ♀</label>
+            </div>
+
+            <label>Partner — date of birth
+              <input type="date" id="m_dob" required />
+            </label>
+            <label>Time of birth
+              <input type="time" id="m_tob" step="60" required />
+              <small>Local time at the birthplace. Unknown? Use 12:00.</small>
+            </label>
+            <label>Place (type to search)
+              <input list="m_cityList" id="m_city" placeholder="Type a city name…" autocomplete="off" />
+              <datalist id="m_cityList"></datalist>
+            </label>
+            <div class="row">
+              <label>Latitude
+                <input type="number" id="m_lat" step="0.0001" placeholder="e.g. 19.0760" required />
+              </label>
+              <label>Longitude
+                <input type="number" id="m_lon" step="0.0001" placeholder="e.g. 72.8777" required />
+              </label>
+            </div>
+            <label>UTC offset (hours)
+              <input type="number" id="m_tz" step="0.25" placeholder="e.g. 5.5" required />
+            </label>
+
+            <button type="submit" id="matchBtn">Check compatibility</button>
+            <p class="err" id="matchErr" hidden></p>
+          </form>
+          <div id="matchResult" class="match-result" hidden></div>
+        </div>
+
+        <p class="disclaimer">
+          Guidance framework, not fixed fate. For legal, financial, or medical
+          decisions, consult a qualified professional.
+        </p>
+        </div>
+      </aside>
+
+      <!-- ===== Right panel: chat ===== -->
+      <main class="chat">
+        <div class="chat-scroll" id="messages">
+          <div class="welcome" id="welcome">
+            <div class="welcome-glyph">☾</div>
+            <h2>Welcome to your consultation</h2>
+            <p>
+              Cast your chart on the left, then ask me anything — your rashi and
+              nakshatra, current dasha phase, career, relationships, remedies, or
+              a name-change analysis.
+            </p>
+          </div>
+        </div>
+
+        <div class="suggestions" id="suggestions" hidden>
+          <button data-q="Give me a warm overview of my chart and what phase of life I'm in right now.">Overview</button>
+          <button data-q="What does my current Mahadasha and Antardasha mean for me right now?">Current phase</button>
+          <button data-q="What does my chart say about my career and work life?">Career</button>
+          <button data-q="What does my chart reveal about relationships and compatibility?">Relationships</button>
+          <button data-q="Are there any doshas or challenging placements I should understand — and remedies suited to me?">Doshas &amp; remedies</button>
+        </div>
+
+        <form class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="Cast your chart first, then ask…" disabled></textarea>
+          <button type="submit" id="sendBtn" disabled>Send</button>
+        </form>
+      </main>
+    </div>
+
+    <!-- ===== Auth overlay (login / register) ===== -->
+    <div id="authOverlay" class="auth-overlay">
+      <div class="auth-box">
+        <img class="brand-mark auth-mark" src="logo.png" alt="Pythia" />
+        <h2 id="authTitle">Welcome to Pythia</h2>
+        <p class="auth-sub" id="authSub">Log in to cast and save charts.</p>
+        <a href="/api/auth/google" id="googleBtn" class="google-btn" hidden>
+          <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+          </svg>
+          <span>Continue with Google</span>
+        </a>
+        <div id="authDivider" class="auth-or" hidden><span>or</span></div>
+        <form id="authForm" class="auth-form">
+          <input type="email" id="authUser" placeholder="Email" autocomplete="email" required />
+          <input type="password" id="authPass" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" id="authSubmit">Log in</button>
+          <p class="err" id="authErr" hidden></p>
+        </form>
+        <p class="auth-switch">
+          <span id="authSwitchText">New here?</span>
+          <button type="button" id="authSwitch">Create an account</button>
+        </p>
+        <p class="auth-legal">
+          By continuing you agree to our
+          <a href="/terms" target="_blank" rel="noopener">Terms</a> and
+          <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+        </p>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

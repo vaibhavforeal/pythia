@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy · Pythia</title>
+    <meta name="description" content="How Pythia collects, uses and protects your data." />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="site">
+    <header class="site-nav">
+      <a class="site-brand" href="/">
+        <img class="brand-mark" src="logo.png" alt="Pythia" />
+        <span>Pythia</span>
+      </a>
+      <a class="btn btn-ghost" href="/app">Open the app</a>
+    </header>
+
+    <main class="legal">
+      <article class="legal-card">
+        <h1>Privacy Policy</h1>
+        <p class="legal-date">Last updated: 22 July 2026</p>
+
+        <p>
+          Pythia (“Pythia”, “we”, “us”) is a Vedic astrology and numerology tool. This
+          policy explains what we collect, why, and the choices you have. We keep data
+          collection to what the service needs — we do not sell your data or use it for
+          advertising.
+        </p>
+
+        <h2>1. Information we collect</h2>
+        <ul>
+          <li>
+            <b>Account details.</b> When you sign up with email, we store your
+            <b>email address</b> and a <b>scrypt hash</b> of your password — never the
+            plaintext password. Legacy accounts may instead have a username. If you use
+            <b>Sign in with Google</b>, we receive your Google account's unique ID and
+            <b>email address</b> (via the <code>openid</code> and <code>email</code>
+            scopes only); we never receive your Google password.
+          </li>
+          <li>
+            <b>Birth details you enter.</b> To compute a chart we use the name (optional),
+            date, time and place of birth — including the city, latitude, longitude and
+            UTC offset — for you and for any partner or person you choose to add.
+          </li>
+          <li>
+            <b>Astrology content.</b> The birth charts we compute and any chat
+            conversations you choose to save to your account.
+          </li>
+          <li>
+            <b>Technical data.</b> A single essential session cookie (below) and standard
+            server logs (such as IP address and request metadata) used transiently to
+            operate and secure the service.
+          </li>
+        </ul>
+
+        <h2>2. How we use your information</h2>
+        <ul>
+          <li>To create and secure your account and keep you signed in.</li>
+          <li>To compute your birth chart and compatibility, and to generate readings.</li>
+          <li>To save and let you reload the people and conversations you store.</li>
+          <li>To protect the service (rate-limiting, abuse prevention, debugging).</li>
+        </ul>
+
+        <h2>3. Service providers we share data with</h2>
+        <p>We use a small number of processors to run Pythia. We share only what each needs:</p>
+        <ul>
+          <li><b>Google</b> — only if you use Sign in with Google, to authenticate you.</li>
+          <li><b>Supabase</b> — database hosting for your account, saved people and saved chats.</li>
+          <li>
+            <b>Microsoft Azure (AI Foundry), serving Anthropic's Claude</b> — when you chat,
+            your messages and the relevant computed chart data are sent to generate the
+            reading. They are not used to train models.
+          </li>
+          <li><b>Open-Meteo</b> — the city name you type is sent to look up coordinates and time zone.</li>
+          <li><b>Render</b> — application hosting.</li>
+        </ul>
+        <p>We do not sell or rent your personal information to anyone.</p>
+
+        <h2>4. Cookies</h2>
+        <p>
+          Pythia uses one <b>essential</b>, HttpOnly session cookie to keep you logged in,
+          plus a short-lived cookie during Google sign-in. We do not use advertising,
+          analytics or cross-site tracking cookies.
+        </p>
+
+        <h2>5. Data retention &amp; your choices</h2>
+        <ul>
+          <li>You can delete any saved person or saved conversation at any time in the app.</li>
+          <li>
+            You can request deletion of your account and all associated data by contacting
+            us (below). We retain data only as long as your account is active or as needed
+            to operate the service and meet legal obligations.
+          </li>
+        </ul>
+
+        <h2>6. Security</h2>
+        <p>
+          Traffic is served over HTTPS, passwords are hashed with scrypt, and access to
+          stored data is restricted to the application. No method of storage or transmission
+          is perfectly secure, but we take reasonable measures to protect your information.
+        </p>
+
+        <h2>7. Children</h2>
+        <p>
+          Pythia is not directed to children under 16, and we do not knowingly collect their
+          personal information. If you believe a child has provided us data, contact us and
+          we will delete it.
+        </p>
+
+        <h2>8. International users</h2>
+        <p>
+          Your information may be processed in countries other than your own, including where
+          our service providers operate. By using Pythia you consent to this processing.
+        </p>
+
+        <h2>9. Changes to this policy</h2>
+        <p>
+          We may update this policy from time to time. We will revise the “last updated” date
+          above and, for material changes, provide a more prominent notice.
+        </p>
+
+        <h2>10. Contact</h2>
+        <p>
+          Questions or requests about your data:
+          <a href="mailto:your-email@example.com">your-email@example.com</a>.
+        </p>
+
+        <p class="legal-back"><a href="/">← Back to Pythia</a></p>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <nav class="foot-links">
+        <a href="/">Home</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+      </nav>
+      <p class="foot-copy">© 2026 Pythia</p>
+    </footer>
+  </body>
+</html>

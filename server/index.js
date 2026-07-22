@@ -69,6 +69,14 @@ app.use(express.static(path.join(__dirname, "..", "public")));
 // Public health check (for the hosting platform) — no auth, before the gate.
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
+// Public pages served without auth. express.static already serves the raw .html
+// files; these give clean, extension-less URLs used in links + OAuth redirects.
+// ("/" → index.html landing is handled by express.static's directory index.)
+const page = f => (_req, res) => res.sendFile(path.join(__dirname, "..", "public", f));
+app.get("/app", page("app.html"));
+app.get("/privacy", page("privacy.html"));
+app.get("/terms", page("terms.html"));
+
 // --- Auth gate --------------------------------------------------------------
 // API responses are dynamic and auth-sensitive — never cache them (this also
 // avoids 304 Not Modified responses, which carry no body for the client to read).
@@ -131,7 +139,7 @@ app.post("/api/auth/login", auth.rateLimit, async (req, res) => {
 // --- Google Sign-In (OAuth) -------------------------------------------------
 // Start: set a short-lived state cookie (CSRF), then bounce to Google's consent.
 app.get("/api/auth/google", (req, res) => {
-  if (!oauth.enabled) return res.redirect("/?auth_error=google_off");
+  if (!oauth.enabled) return res.redirect("/app?auth_error=google_off");
   const state = crypto.randomBytes(16).toString("hex");
   auth.setCookie(res, "oauth_state", state, 600); // 10 min
   res.redirect(oauth.authUrl(req, state));
@@ -140,16 +148,16 @@ app.get("/api/auth/google", (req, res) => {
 // Callback: verify state, exchange the code, then find/link/create the account.
 app.get("/api/auth/google/callback", async (req, res) => {
   try {
-    if (!oauth.enabled) return res.redirect("/");
+    if (!oauth.enabled) return res.redirect("/app");
     const { code, state } = req.query;
     const saved = auth.parseCookies(req).oauth_state;
     auth.clearCookie(res, "oauth_state");
-    if (!code || !state || !saved || state !== saved) return res.redirect("/?auth_error=state");
+    if (!code || !state || !saved || state !== saved) return res.redirect("/app?auth_error=state");
 
     const tokens = await oauth.exchangeCode(req, String(code));
     const profile = await oauth.fetchProfile(tokens.access_token);
     const email = normalizeEmail(profile.email);
-    if (!email || profile.email_verified === false) return res.redirect("/?auth_error=email");
+    if (!email || profile.email_verified === false) return res.redirect("/app?auth_error=email");
     const gid = String(profile.sub);
 
     let user = await users.findByGoogleId(gid);
@@ -163,10 +171,10 @@ app.get("/api/auth/google/callback", async (req, res) => {
       }
     }
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.redirect("/");
+    res.redirect("/app");
   } catch (err) {
     console.error("google oauth error:", err);
-    res.redirect("/?auth_error=oauth");
+    res.redirect("/app?auth_error=oauth");
   }
 });
 
