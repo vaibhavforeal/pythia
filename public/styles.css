@@ -467,6 +467,22 @@ button {
 .auth-mark { width: 44px; height: 44px; font-size: 22px; margin: 0 auto 14px; border-radius: var(--radius-sm); }
 .auth-box h2 { font-family: var(--font-head); font-weight: 600; color: var(--ink); margin: 0 0 4px; font-size: 21px; }
 .auth-sub { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
+/* Continue with Google */
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 10px 12px; margin-bottom: 4px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.google-btn:hover { background: #f7f9fc; border-color: var(--sky); box-shadow: var(--shadow-sm); }
+.google-btn svg { flex: 0 0 auto; }
+/* "or" divider between Google and the email form */
+.auth-or {
+  display: flex; align-items: center; gap: 10px;
+  margin: 14px 2px 12px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+}
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .auth-form { display: flex; flex-direction: column; gap: 9px; }
 .auth-form input {
   margin-top: 0; padding: 10px 12px; font-size: 13.5px;

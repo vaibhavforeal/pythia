@@ -73,6 +73,17 @@ function clearSessionCookie(res) {
   if (SECURE) parts.push("Secure");
   appendCookie(res, parts.join("; "));
 }
+// Generic short-lived cookie (used for the OAuth `state` CSRF token).
+function setCookie(res, name, value, maxAgeSec) {
+  const parts = [`${name}=${value}`, "HttpOnly", "Path=/", "SameSite=Lax", `Max-Age=${maxAgeSec}`];
+  if (SECURE) parts.push("Secure");
+  appendCookie(res, parts.join("; "));
+}
+function clearCookie(res, name) {
+  const parts = [`${name}=`, "HttpOnly", "Path=/", "SameSite=Lax", "Max-Age=0"];
+  if (SECURE) parts.push("Secure");
+  appendCookie(res, parts.join("; "));
+}
 function parseCookies(req) {
   const out = {};
   const header = req.headers.cookie;
@@ -168,6 +179,6 @@ function rateLimiter({ windowMs, max, key, message }) {
 
 module.exports = {
   hashPassword, verifyPassword, makeSessionToken,
-  setSessionCookie, clearSessionCookie, currentUserId,
+  setSessionCookie, clearSessionCookie, setCookie, clearCookie, parseCookies, currentUserId,
   requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE
 };

@@ -26,6 +26,9 @@ const account = $("account");
 const authForm = $("authForm");
 const authErr = $("authErr");
 const authSubmit = $("authSubmit");
+const googleBtn = $("googleBtn");
+const authDivider = $("authDivider");
+let pendingAuthError = null; // a Google-redirect error to show on the login screen
 const peopleCard = $("peopleCard");
 const peopleList = $("peopleList");
 const peopleEmpty = $("peopleEmpty");
@@ -690,6 +693,11 @@ function showAuth() {
   authMode = "login";
   applyAuthMode();
   $("authPass").value = "";
+  if (pendingAuthError) { // surface a failed Google redirect
+    authErr.textContent = pendingAuthError;
+    authErr.hidden = false;
+    pendingAuthError = null;
+  }
   authOverlay.hidden = false;
   panelToggle.hidden = true; // keep the drawer toggle off the login screen
   if (mobileBar) mobileBar.hidden = true; // and the branding bar (login has its own)
@@ -700,7 +708,7 @@ function showAuth() {
 function onAuthed(user) {
   authOverlay.hidden = true;
   account.hidden = false;
-  $("accountName").textContent = user.username;
+  $("accountName").textContent = user.name;
   peopleCard.hidden = false;
   convCard.hidden = false;
   panelToggle.hidden = false; // reveal the mobile drawer toggle
@@ -713,11 +721,16 @@ function applyAuthMode() {
   const reg = authMode === "register";
   $("authTitle").textContent = reg ? "Create your account" : "Welcome to Astroman";
   $("authSub").textContent = reg
-    ? "Pick a username and a password (at least 8 characters)."
+    ? "Sign up with your email and a password (at least 8 characters)."
     : "Log in to cast and save charts.";
   authSubmit.textContent = reg ? "Create account" : "Log in";
   $("authSwitchText").textContent = reg ? "Already have an account?" : "New here?";
   $("authSwitch").textContent = reg ? "Log in" : "Create an account";
+  // Registration is email-only; login also accepts a legacy username.
+  const idField = $("authUser");
+  idField.type = reg ? "email" : "text";
+  idField.placeholder = reg ? "Email" : "Email or username";
+  idField.setAttribute("autocomplete", reg ? "email" : "username");
   $("authPass").setAttribute("autocomplete", reg ? "new-password" : "current-password");
   authErr.hidden = true;
 }
@@ -731,8 +744,10 @@ $("authSwitch").addEventListener("click", () => {
 authForm.addEventListener("submit", async e => {
   e.preventDefault();
   authErr.hidden = true;
-  const username = $("authUser").value.trim();
+  const idv = $("authUser").value.trim();
   const password = $("authPass").value;
+  // register → email account; login → email OR legacy username in `identifier`
+  const payload = authMode === "register" ? { email: idv, password } : { identifier: idv, password };
   const label = authSubmit.textContent;
   authSubmit.disabled = true;
   authSubmit.textContent = "…";
@@ -740,7 +755,7 @@ authForm.addEventListener("submit", async e => {
     const res = await fetch(`/api/auth/${authMode}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(payload)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Something went wrong.");
@@ -759,6 +774,33 @@ $("logoutBtn").addEventListener("click", async () => {
   try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
   location.reload();
 });
+
+// Show the "Continue with Google" button only when the server has it configured.
+async function loadProviders() {
+  try {
+    const res = await fetch("/api/auth/providers");
+    const data = await res.json();
+    const on = !!(data && data.google);
+    if (googleBtn) googleBtn.hidden = !on;
+    if (authDivider) authDivider.hidden = !on;
+  } catch {
+    /* leave the Google button hidden */
+  }
+}
+
+// After a failed Google redirect the server sends us back to /?auth_error=…
+const AUTH_ERRORS = {
+  state: "Google sign-in expired — please try again.",
+  email: "Google didn't share a verified email address.",
+  oauth: "Google sign-in failed — please try again.",
+  google_off: "Google sign-in isn't configured."
+};
+function checkAuthError() {
+  const code = new URLSearchParams(location.search).get("auth_error");
+  if (!code) return;
+  history.replaceState(null, "", location.pathname); // strip it from the URL
+  pendingAuthError = AUTH_ERRORS[code] || "Sign-in failed — please try again.";
+}
 
 async function initAuth() {
   try {
@@ -996,4 +1038,6 @@ async function saveConversation() {
   }
 }
 
+checkAuthError();
+loadProviders();
 initAuth();

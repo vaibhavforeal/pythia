@@ -29,9 +29,19 @@ function supabaseBackend(url, key) {
   return {
     name: "Supabase Postgres",
     users: {
+      // username/email are citext columns → .eq is case-insensitive and wildcard-safe
       async findByUsername(u) {
-        // username is a citext column → .eq is case-insensitive and wildcard-safe
         const { data, error } = await sb.from("users").select("*").eq("username", String(u)).maybeSingle();
+        if (error) throw error;
+        return data || undefined;
+      },
+      async findByEmail(e) {
+        const { data, error } = await sb.from("users").select("*").eq("email", String(e)).maybeSingle();
+        if (error) throw error;
+        return data || undefined;
+      },
+      async findByGoogleId(gid) {
+        const { data, error } = await sb.from("users").select("*").eq("google_id", String(gid)).maybeSingle();
         if (error) throw error;
         return data || undefined;
       },
@@ -42,10 +52,22 @@ function supabaseBackend(url, key) {
       },
       async add(user) {
         const { error } = await sb.from("users").insert({
-          id: user.id, username: user.username, salt: user.salt, hash: user.hash, created_at: user.createdAt
+          id: user.id, username: user.username || null, email: user.email || null,
+          google_id: user.googleId || null, salt: user.salt || null, hash: user.hash || null,
+          created_at: user.createdAt
         });
         if (error) throw error;
         return user;
+      },
+      async update(id, patch) {
+        const upd = {};
+        if (patch.googleId !== undefined) upd.google_id = patch.googleId;
+        if (patch.email !== undefined) upd.email = patch.email;
+        if (patch.salt !== undefined) upd.salt = patch.salt;
+        if (patch.hash !== undefined) upd.hash = patch.hash;
+        const { error } = await sb.from("users").update(upd).eq("id", id);
+        if (error) throw error;
+        return true;
       }
     },
     people: {
@@ -127,7 +149,15 @@ function jsonBackend() {
     name: `local JSON files (${DATA_DIR})`,
     users: {
       async findByUsername(u) {
-        return read(USERS).find(x => x.username.toLowerCase() === String(u).toLowerCase());
+        const t = String(u).toLowerCase();
+        return read(USERS).find(x => x.username && x.username.toLowerCase() === t);
+      },
+      async findByEmail(e) {
+        const t = String(e).toLowerCase();
+        return read(USERS).find(x => x.email && x.email.toLowerCase() === t);
+      },
+      async findByGoogleId(gid) {
+        return read(USERS).find(x => x.googleId === String(gid));
       },
       async findById(id) {
         return read(USERS).find(x => x.id === id);
@@ -137,6 +167,14 @@ function jsonBackend() {
         all.push(user);
         write(USERS, all);
         return user;
+      },
+      async update(id, patch) {
+        const all = read(USERS);
+        const u = all.find(x => x.id === id);
+        if (!u) return false;
+        Object.assign(u, patch);
+        write(USERS, all);
+        return true;
       }
     },
     people: {

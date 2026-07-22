@@ -11,8 +11,16 @@ const {
 const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
+const oauth = require("./oauth");
 const store = require("./store");
 const { users, people, conversations } = store;
+
+// --- Account helpers ---------------------------------------------------------
+const normalizeEmail = e => String(e || "").trim().toLowerCase();
+const isValidEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
+// What to show in the UI: username for legacy accounts, else the email's local part.
+const displayName = u => u.username || (u.email ? u.email.split("@")[0] : "user");
+const publicUser = u => ({ id: u.id, name: displayName(u), email: u.email || null });
 
 // --- Azure AI Foundry config -------------------------------------------------
 // Claude is served through Foundry's Anthropic-native Messages API. The chat
@@ -77,38 +85,88 @@ app.use("/api", auth.checkOrigin, (req, res, next) => {
   return auth.requireAuth(req, res, next);
 });
 
+// Which login methods the UI should offer (Google appears only when configured).
+app.get("/api/auth/providers", (_req, res) => res.json({ google: oauth.enabled }));
+
+// New accounts register with an email address (usernames are legacy — existing
+// username accounts still log in below).
 app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
   try {
-    const { username, password } = req.body || {};
-    const u = String(username || "").trim();
-    if (!/^[a-zA-Z0-9_-]{3,32}$/.test(u)) {
-      return res.status(400).json({ error: "Username must be 3–32 characters (letters, numbers, _ or -)." });
-    }
+    const { email, password } = req.body || {};
+    const e = normalizeEmail(email);
+    if (!isValidEmail(e)) return res.status(400).json({ error: "Enter a valid email address." });
     if (typeof password !== "string" || password.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters." });
     }
-    if (await users.findByUsername(u)) return res.status(409).json({ error: "That username is taken." });
+    if (await users.findByEmail(e)) return res.status(409).json({ error: "That email is already registered." });
     const { salt, hash } = await auth.hashPassword(password);
-    const user = await users.add({ id: crypto.randomUUID(), username: u, salt, hash, createdAt: new Date().toISOString() });
+    const user = await users.add({ id: crypto.randomUUID(), email: e, salt, hash, createdAt: new Date().toISOString() });
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.json({ user: { id: user.id, username: user.username } });
+    res.json({ user: publicUser(user) });
   } catch (err) {
     console.error("register error:", err);
     res.status(500).json({ error: "Registration failed." });
   }
 });
 
+// Login accepts an email OR a legacy username in `identifier`.
 app.post("/api/auth/login", auth.rateLimit, async (req, res) => {
   try {
-    const { username, password } = req.body || {};
-    const user = await users.findByUsername(String(username || "").trim());
-    const ok = user && (await auth.verifyPassword(String(password || ""), user.salt, user.hash));
-    if (!ok) return res.status(401).json({ error: "Invalid username or password." });
+    const b = req.body || {};
+    const id = String(b.identifier || b.email || b.username || "").trim();
+    const user = id.includes("@")
+      ? await users.findByEmail(normalizeEmail(id))
+      : await users.findByUsername(id);
+    // user.hash is null for Google-only accounts → password login is refused.
+    const ok = user && user.hash && (await auth.verifyPassword(String(b.password || ""), user.salt, user.hash));
+    if (!ok) return res.status(401).json({ error: "Invalid login or password." });
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.json({ user: { id: user.id, username: user.username } });
+    res.json({ user: publicUser(user) });
   } catch (err) {
     console.error("login error:", err);
     res.status(500).json({ error: "Login failed." });
+  }
+});
+
+// --- Google Sign-In (OAuth) -------------------------------------------------
+// Start: set a short-lived state cookie (CSRF), then bounce to Google's consent.
+app.get("/api/auth/google", (req, res) => {
+  if (!oauth.enabled) return res.redirect("/?auth_error=google_off");
+  const state = crypto.randomBytes(16).toString("hex");
+  auth.setCookie(res, "oauth_state", state, 600); // 10 min
+  res.redirect(oauth.authUrl(req, state));
+});
+
+// Callback: verify state, exchange the code, then find/link/create the account.
+app.get("/api/auth/google/callback", async (req, res) => {
+  try {
+    if (!oauth.enabled) return res.redirect("/");
+    const { code, state } = req.query;
+    const saved = auth.parseCookies(req).oauth_state;
+    auth.clearCookie(res, "oauth_state");
+    if (!code || !state || !saved || state !== saved) return res.redirect("/?auth_error=state");
+
+    const tokens = await oauth.exchangeCode(req, String(code));
+    const profile = await oauth.fetchProfile(tokens.access_token);
+    const email = normalizeEmail(profile.email);
+    if (!email || profile.email_verified === false) return res.redirect("/?auth_error=email");
+    const gid = String(profile.sub);
+
+    let user = await users.findByGoogleId(gid);
+    if (!user) {
+      const existing = await users.findByEmail(email);
+      if (existing) {
+        await users.update(existing.id, { googleId: gid }); // link Google to the existing email account
+        user = existing;
+      } else {
+        user = await users.add({ id: crypto.randomUUID(), email, googleId: gid, createdAt: new Date().toISOString() });
+      }
+    }
+    auth.setSessionCookie(res, auth.makeSessionToken(user.id));
+    res.redirect("/");
+  } catch (err) {
+    console.error("google oauth error:", err);
+    res.redirect("/?auth_error=oauth");
   }
 });
 
@@ -122,7 +180,7 @@ app.get("/api/auth/me", async (req, res) => {
     const uid = auth.currentUserId(req);
     const user = uid ? await users.findById(uid) : null;
     if (!user) return res.status(401).json({ error: "Not authenticated." });
-    res.json({ user: { id: user.id, username: user.username } });
+    res.json({ user: publicUser(user) });
   } catch (err) {
     console.error("me error:", err);
     res.status(500).json({ error: "Lookup failed." });
