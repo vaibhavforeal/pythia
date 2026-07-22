@@ -1,4 +1,4 @@
-# Render Blueprint — deploys Astroman as a Docker web service. Accounts and
+# Render Blueprint — deploys Pythia as a Docker web service. Accounts and
 # saved people live in Supabase Postgres, so no persistent disk is needed.
 # Commit this file, then on render.com choose New → Blueprint and point it at
 # the repo. Fill the secret vars when prompted.

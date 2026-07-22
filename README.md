@@ -1,4 +1,4 @@
-# Astroman ✦
+# Pythia ✦
 
 A local **Vedic astrology + numerology** consultation tool with a GPT-style chat
 interface. It computes an accurate sidereal (Lahiri) birth chart with the **Swiss

@@ -719,7 +719,7 @@ function onAuthed(user) {
 
 function applyAuthMode() {
   const reg = authMode === "register";
-  $("authTitle").textContent = reg ? "Create your account" : "Welcome to Astroman";
+  $("authTitle").textContent = reg ? "Create your account" : "Welcome to Pythia";
   $("authSub").textContent = reg
     ? "Sign up with your email and a password (at least 8 characters)."
     : "Log in to cast and save charts.";

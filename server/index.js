@@ -38,7 +38,7 @@ const PORT = process.env.PORT || 3030;
 const SKILL_PROMPT = loadSkill();
 
 const BEHAVIOUR_NOTE =
-  "You are running inside a live chat application called Astroman. A birth chart " +
+  "You are running inside a live chat application called Pythia. A birth chart " +
   "has already been computed for the user with the Swiss Ephemeris (Lahiri sidereal " +
   "ayanamsa) and is provided below — treat it as authoritative and DO NOT recompute " +
   "planetary positions, the ascendant, or the dasha. You may still compute numerology " +
@@ -583,7 +583,7 @@ function parseBirth(b) {
 }
 
 app.listen(PORT, () => {
-  console.log(`\n  ✨ Astroman running at http://localhost:${PORT}`);
+  console.log(`\n  ✨ Pythia running at http://localhost:${PORT}`);
   console.log(`  ℹ  Data store: ${store.name}`);
   if (!ENDPOINT || !API_KEY) {
     console.log(

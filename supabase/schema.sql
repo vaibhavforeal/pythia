@@ -1,4 +1,4 @@
--- Astroman — Supabase schema. Run once in your Supabase project:
+-- Pythia — Supabase schema. Run once in your Supabase project:
 --   Dashboard → SQL Editor → paste this → Run.
 -- The app connects with the service_role key (which bypasses RLS); RLS is
 -- enabled with no policies so the public/anon key has no access even if leaked.

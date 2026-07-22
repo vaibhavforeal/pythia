@@ -1,4 +1,4 @@
-# Astroman — container image for managed hosting (Render / Railway / Fly).
+# Pythia — container image for managed hosting (Render / Railway / Fly).
 FROM node:22-bookworm
 
 ENV NODE_ENV=production

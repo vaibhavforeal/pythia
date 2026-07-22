@@ -1,5 +1,5 @@
 {
-  "name": "astroman",
+  "name": "pythia",
   "version": "1.0.0",
   "description": "Vedic astrology + numerology consultation tool with a GPT-style chat interface. Computes a sidereal (Lahiri) birth chart with Swiss Ephemeris and interprets it with Claude.",
   "main": "server/index.js",
