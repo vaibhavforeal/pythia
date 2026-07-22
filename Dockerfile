@@ -1,5 +1,5 @@
 # Astroman — container image for managed hosting (Render / Railway / Fly).
-FROM node:20-bookworm
+FROM node:22-bookworm
 
 ENV NODE_ENV=production
 WORKDIR /app

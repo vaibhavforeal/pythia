@@ -8,11 +8,20 @@
 const path = require("path");
 const fs = require("fs");
 
-const URL = process.env.SUPABASE_URL;
-const KEY = process.env.SUPABASE_SERVICE_KEY;
+const URL = (process.env.SUPABASE_URL || "").trim();
+const KEY = (process.env.SUPABASE_SERVICE_KEY || "").trim();
 
 // --- Supabase Postgres backend ----------------------------------------------
 function supabaseBackend(url, key) {
+  if (!/^https?:\/\//i.test(url)) {
+    console.error(
+      "\n  ✗ SUPABASE_URL is not a valid URL.\n" +
+        "    Use your Supabase Project URL (Dashboard → Settings → API → Project URL),\n" +
+        "    e.g.  https://abcdefghijkl.supabase.co  — NOT the connection string or the key.\n" +
+        `    Got: "${url.slice(0, 40)}${url.length > 40 ? "…" : ""}"\n`
+    );
+    throw new Error("Invalid SUPABASE_URL");
+  }
   const { createClient } = require("@supabase/supabase-js");
   const sb = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 
