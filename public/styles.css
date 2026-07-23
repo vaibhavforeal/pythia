@@ -69,7 +69,7 @@ html, body {
 
 /* Fixed header (logo + title) — stays pinned while the rest of the sidebar scrolls. */
 .brand {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   flex: 0 0 auto; margin: 0;
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--line);
@@ -79,16 +79,18 @@ html, body {
   width: 36px; height: 36px; flex: 0 0 auto;
   display: block; object-fit: contain;
 }
+.brand-text { flex: 1; min-width: 0; }
 .brand h1 { margin: 0; font-family: var(--font-head); font-size: 19px; font-weight: 600; letter-spacing: 0.2px; color: var(--ink); }
-.tag { margin: 1px 0 0; color: var(--muted); font-size: 11px; }
+.tag { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.panel-close { display: none; }
 
 .birth-form h2, .chart-card h3, .match-card h3 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
   color: var(--sky-deep); margin: 4px 0 10px; font-weight: 700;
 }
 
-label { display: block; margin-bottom: 9px; font-size: 12px; color: var(--muted); font-weight: 500; }
-label small { display: block; margin-top: 3px; font-size: 10.5px; color: var(--faint); font-weight: 400; }
+label { display: block; margin-bottom: 12px; font-size: 12px; color: var(--muted); font-weight: 500; }
+label small { display: block; margin-top: 3px; font-size: 10.5px; color: var(--faint); font-weight: 400; line-height: 1.35; }
 
 input {
   width: 100%; margin-top: 4px; padding: 7px 10px;
@@ -99,7 +101,8 @@ input {
 input::placeholder { color: var(--faint); }
 input:focus { outline: none; border-color: var(--sky); box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14); }
 
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 3px; }
+.row label { margin-bottom: 9px; }
 
 button {
   cursor: pointer; border: none; border-radius: var(--radius-sm);
@@ -123,10 +126,11 @@ button {
 }
 .chart-card .asc { font-size: 13px; margin-bottom: 9px; color: var(--ink); }
 .chart-card .asc b { color: var(--sky-deep); }
-.chart-card table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.chart-card table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .chart-card th, .chart-card td {
-  text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line-soft);
+  text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--line-soft);
 }
+.chart-card td:nth-child(2) { white-space: nowrap; }
 .chart-card th { color: var(--muted); font-weight: 600; }
 .chart-card td .retro { color: var(--sky); font-size: 10.5px; }
 .chart-card .dasha {
@@ -140,11 +144,12 @@ button {
   font-size: 12px; color: var(--muted);
 }
 .aspects-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px;
   color: var(--sky-deep); font-weight: 700; margin-bottom: 6px;
 }
 .node-toggle {
-  float: right; display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 5px;
   font-size: 10.5px; text-transform: none; letter-spacing: 0; font-weight: 500;
   color: var(--muted); cursor: pointer;
 }
@@ -168,7 +173,7 @@ button {
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
 }
 #vargaSelect, #bavSelect {
-  float: right; padding: 3px 6px; font-size: 11px;
+  padding: 3px 6px; font-size: 11px;
   background: var(--field); color: var(--ink);
   border: 1px solid var(--line); border-radius: 6px; font-family: var(--font);
   text-transform: none; letter-spacing: 0; cursor: pointer;
@@ -200,7 +205,7 @@ button {
 /* ---------- Yogas ---------- */
 .chart-card .yogas { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .y-count {
-  float: right; font-size: 10px; font-weight: 700; color: var(--sky-deep);
+  font-size: 10px; font-weight: 700; color: var(--sky-deep);
   background: var(--sky-soft); border-radius: var(--radius-xs); padding: 1px 8px;
 }
 .yoga-list { list-style: none; margin: 4px 0 0; padding: 0; }
@@ -408,8 +413,10 @@ button {
   background: var(--sky-soft); border: 1px solid var(--line); border-radius: var(--radius-sm);
   font-size: 11.5px; color: var(--muted);
 }
+.account-user { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-user b { color: var(--sky-deep); }
 .logout {
+  flex: 0 0 auto;
   padding: 4px 10px; font-size: 11px; color: var(--sky-deep);
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
 }
@@ -421,7 +428,7 @@ button {
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm);
 }
 .save-person {
-  float: right; padding: 3px 9px; font-size: 10.5px; font-weight: 600;
+  padding: 3px 9px; font-size: 10.5px; font-weight: 600;
   color: var(--sky-deep); background: var(--sky-soft);
   border: 1px solid var(--line); border-radius: var(--radius-sm);
   text-transform: none; letter-spacing: 0;
@@ -453,18 +460,18 @@ button {
 /* ---------- Auth overlay ---------- */
 .auth-overlay {
   position: fixed; inset: 0; z-index: 100;
-  display: grid; place-items: center; padding: 20px;
+  display: grid; place-items: center; padding: 20px; overflow-y: auto; max-height: 100vh;
   background:
     linear-gradient(rgba(255, 255, 255, 0.32), rgba(232, 242, 253, 0.5)),
     url("cosmos-bg.webp") center center / cover no-repeat fixed;
 }
 .auth-box {
-  width: 100%; max-width: 340px; text-align: center;
+  width: 100%; max-width: 340px; text-align: center; margin: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 28px 26px; box-shadow: var(--shadow-sm);
 }
 .auth-mark { width: 56px; height: 56px; margin: 0 auto 12px; }
-.auth-box h2 { font-family: var(--font-head); font-weight: 600; color: var(--ink); margin: 0 0 4px; font-size: 21px; }
+.auth-box h2 { font-family: var(--font-head); font-weight: 600; color: var(--ink); margin: 0 0 8px; font-size: 21px; }
 .auth-sub { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
 /* Continue with Google */
 .google-btn {
@@ -495,10 +502,13 @@ button {
 #authSubmit:hover:not(:disabled) { background: var(--sky-deep); }
 #authSubmit:disabled { opacity: 0.6; cursor: wait; }
 .auth-form .err { text-align: left; }
-.auth-switch { margin: 16px 0 0; font-size: 12px; color: var(--muted); }
+.auth-switch {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  margin: 16px 0 0; font-size: 12px; color: var(--muted);
+}
 #authSwitch {
   background: none; color: var(--sky-deep); font-size: 12px; font-weight: 600;
-  padding: 0 0 0 4px; text-decoration: underline;
+  padding: 0; text-decoration: underline; cursor: pointer;
 }
 
 /* ---------- Responsive: stack + compact on small screens ---------- */
@@ -523,8 +533,18 @@ button {
     box-shadow: 4px 0 28px rgba(20, 50, 80, 0.22);
   }
   .app.panel-open .panel { transform: translateX(0); }
-  .brand { display: none; }              /* the sidebar's own logo lives on desktop only */
-  .panel-scroll { padding: 54px 14px 18px; }   /* top clears the floating hamburger */
+  .brand {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+  }
+  .panel-close {
+    display: grid; place-items: center;
+    width: 32px; height: 32px; font-size: 16px; color: var(--muted);
+    background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-sm);
+    cursor: pointer; flex: 0 0 auto;
+  }
+  .panel-close:hover { color: var(--ink); border-color: var(--sky); background: var(--sky-soft); }
+  .panel-scroll { padding: 14px 14px 18px; }
 
   /* Fixed branding bar across the top — always visible once signed in, so
      closing the drawer reveals the chat under a pinned Pythia header. It sits
@@ -552,14 +572,14 @@ button {
   /* Once the drawer is open it stays out of the way — close it by tapping the
      chat or the branding bar. This also keeps it off the scrolling sidebar. */
   .app.panel-open .panel-toggle { display: none; }
-  /* Transparent tap-catcher over the chat: no dimming, but tapping the chat
-     while the drawer is open closes the drawer. */
+  /* Backdrop over the chat with glassmorphic blur and fade transition */
   .panel-scrim {
     position: fixed; inset: 0; z-index: 190; display: block;
-    background: transparent;
+    background: rgba(18, 48, 73, 0.35); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    opacity: 0; transition: opacity .25s ease;
     pointer-events: none;
   }
-  .app.panel-open .panel-scrim { pointer-events: auto; }
+  .app.panel-open .panel-scrim { opacity: 1; pointer-events: auto; }
 
   /* Chat gutters; keep content clear of the fixed top bar */
   .chat-scroll { padding: 64px 0 18px; }
@@ -616,9 +636,9 @@ button {
 .hero-logo { width: 76px; height: 76px; display: block; margin: 0 auto 10px; }
 .hero h1, .hero-name {
   font-family: var(--font-head); font-weight: 700; font-size: clamp(38px, 7vw, 58px);
-  color: var(--ink); margin: 0 0 4px; line-height: 1.04; letter-spacing: 0.5px;
+  color: var(--ink); margin: 0 0 16px; line-height: 1.1; letter-spacing: 0.5px;
 }
-.hero-tag { font-size: clamp(15px, 2.4vw, 19px); color: var(--sky-deep); font-weight: 600; margin: 0 0 16px; }
+.hero-tag { font-size: clamp(15px, 2.4vw, 19px); color: var(--sky-deep); font-weight: 600; margin: 0 0 18px; }
 .hero-sub { font-size: clamp(15px, 2.2vw, 18px); color: var(--muted); line-height: 1.6; margin: 0 auto 24px; max-width: 620px; }
 .hero-sub b { color: var(--ink); }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }

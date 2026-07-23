@@ -47,14 +47,16 @@ const pad = n => String(n).padStart(2, "0");
 // Mobile slide-in drawer for the chart / compatibility panel (no effect on desktop)
 const appEl = document.querySelector(".app");
 const panelToggle = $("panelToggle");
+const panelClose = $("panelClose");
 const panelScrim = $("panelScrim");
 const mobileBar = $("mobileBar");
 function setPanelOpen(open) {
   appEl.classList.toggle("panel-open", open);
-  panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  if (panelToggle) panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
 }
-panelToggle.addEventListener("click", () => setPanelOpen(!appEl.classList.contains("panel-open")));
-panelScrim.addEventListener("click", () => setPanelOpen(false));
+if (panelToggle) panelToggle.addEventListener("click", () => setPanelOpen(!appEl.classList.contains("panel-open")));
+if (panelClose) panelClose.addEventListener("click", () => setPanelOpen(false));
+if (panelScrim) panelScrim.addEventListener("click", () => setPanelOpen(false));
 
 if (window.marked) {
   marked.setOptions({ breaks: true, gfm: true });
@@ -932,7 +934,7 @@ function renderConversations(list) {
 function highlightActiveConv() {
   if (!convList) return;
   convList.querySelectorAll("li[data-id]").forEach(li =>
-    li.classList.toggle("active", li.dataset.id === currentConvId));
+    li.classList.toggle("active", String(li.dataset.id) === String(currentConvId)));
 }
 
 convList.addEventListener("click", async e => {
