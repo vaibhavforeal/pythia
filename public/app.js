@@ -214,7 +214,187 @@ function renderCosmicId(c) {
           <span class="cid-val">${asc.sign || "—"}${sa(asc.signSanskrit)}</span></li>
       </ul>
       <div class="cid-vibe">“${vibe}”</div>
+      <div class="cid-actions">
+        <button type="button" class="cid-share" id="cidShare">Share your ID ✦</button>
+      </div>
     </div>`;
+}
+
+// ---- Shareable "Cosmic ID" story image (9:16) -----------------------------
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// The logo mark is dark navy line-art; recolor it to white so it glows on the
+// dark story gradient. Returns an offscreen canvas.
+async function loadWhiteLogo() {
+  const img = await loadImage("logo.png");
+  const oc = document.createElement("canvas");
+  oc.width = img.naturalWidth || 256;
+  oc.height = img.naturalHeight || 256;
+  const octx = oc.getContext("2d");
+  octx.drawImage(img, 0, 0);
+  octx.globalCompositeOperation = "source-in";
+  octx.fillStyle = "#ffffff";
+  octx.fillRect(0, 0, oc.width, oc.height);
+  return oc;
+}
+
+function drawStars(ctx, W, H, n) {
+  for (let i = 0; i < n; i++) {
+    ctx.globalAlpha = Math.random() * 0.5 + 0.2;
+    ctx.beginPath();
+    ctx.arc(Math.random() * W, Math.random() * H, Math.random() * 1.8 + 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+async function ensureStoryFonts() {
+  try {
+    if (document.fonts && document.fonts.load) {
+      await Promise.all([
+        document.fonts.load("600 90px Lora"),
+        document.fonts.load("italic 500 46px Lora"),
+        document.fonts.load("600 30px Raleway"),
+        document.fonts.load("400 34px Raleway")
+      ]);
+      await document.fonts.ready;
+    }
+  } catch (_) { /* fall back to system fonts */ }
+}
+
+function centerWrap(ctx, text, cx, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "";
+  const lines = [];
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  lines.forEach((ln, i) => ctx.fillText(ln, cx, y + i * lineHeight));
+}
+
+const ls = (ctx, v) => { if ("letterSpacing" in ctx) ctx.letterSpacing = v; };
+
+async function buildStoryImage(data) {
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const g = ctx.createLinearGradient(0, 0, W * 0.6, H);
+  g.addColorStop(0, "#0b2a4a");
+  g.addColorStop(0.55, "#0a3d68");
+  g.addColorStop(1, "#2f5aa8");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  drawStars(ctx, W, H, 90);
+
+  await ensureStoryFonts();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+
+  try {
+    const logo = await loadWhiteLogo();
+    const size = 290;
+    ctx.save();
+    ctx.shadowColor = "rgba(150,190,255,0.5)";
+    ctx.shadowBlur = 40;
+    ctx.drawImage(logo, W / 2 - size / 2, 175, size, size);
+    ctx.restore();
+  } catch (_) { /* logo optional */ }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 76px Lora, Georgia, serif";
+  ctx.fillText("Pythia", W / 2, 585);
+
+  ctx.fillStyle = "rgba(198,222,255,0.72)";
+  ctx.font = "600 30px Raleway, sans-serif";
+  ls(ctx, "4px");
+  ctx.fillText("✦  YOUR COSMIC ID  ✦", W / 2, 650);
+  ls(ctx, "0px");
+
+  const items = [
+    ["MOON", data.moon.sign, data.moon.signSanskrit],
+    ["STAR", data.star, data.pada ? "pada " + data.pada : ""],
+    ["RISING", data.asc.sign, data.asc.signSanskrit]
+  ];
+  let y = 830;
+  for (const [label, val, sub] of items) {
+    ctx.fillStyle = "rgba(188,216,255,0.85)";
+    ctx.font = "600 30px Raleway, sans-serif";
+    ls(ctx, "3px");
+    ctx.fillText(label, W / 2, y);
+    ls(ctx, "0px");
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "600 90px Lora, Georgia, serif";
+    ctx.fillText(val || "—", W / 2, y + 92);
+
+    if (sub) {
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.font = "400 34px Raleway, sans-serif";
+      ctx.fillText(sub, W / 2, y + 140);
+    }
+    y += 232;
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "italic 500 46px Lora, Georgia, serif";
+  centerWrap(ctx, "“" + data.vibe + "”", W / 2, 1600, W - 200, 62);
+
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.font = "500 30px Raleway, sans-serif";
+  ls(ctx, "2px");
+  ctx.fillText("cast yours at pythia", W / 2, 1840);
+  ls(ctx, "0px");
+
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+  });
+}
+
+async function shareCosmicId(c) {
+  const btn = $("cidShare");
+  const moon = c.planets.find(p => p.key === "Moon") || {};
+  const data = {
+    moon,
+    asc: c.ascendant || {},
+    star: (c.dasha && c.dasha.moonNakshatra) || moon.nakshatra || "",
+    pada: c.dasha && c.dasha.moonPada,
+    vibe: SIGN_VIBES[moon.signIndex] ?? "one of one"
+  };
+  const orig = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Creating…"; }
+  try {
+    const blob = await buildStoryImage(data);
+    const file = new File([blob], "pythia-cosmic-id.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "My Cosmic ID", text: "my vedic big three ✦ via Pythia" });
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "pythia-cosmic-id.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+  } catch (e) {
+    if (!e || e.name !== "AbortError") console.error("Cosmic ID share failed:", e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig || "Share your ID ✦"; }
+  }
 }
 
 // ---- Render the chart summary card ----------------------------------------
@@ -320,6 +500,9 @@ function renderChartCard(c) {
           .join("")}</tbody>
       </table>
     </div>`;
+
+  const shareBtn = $("cidShare");
+  if (shareBtn) shareBtn.addEventListener("click", () => shareCosmicId(c));
 
   const nt = $("nodeToggle");
   if (nt) {
