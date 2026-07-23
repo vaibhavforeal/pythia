@@ -338,7 +338,7 @@ async function storyScaffold(ctx, W, H, sectionLabel) {
   ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.font = "500 30px Raleway, sans-serif";
   ls(ctx, "2px");
-  ctx.fillText("cast yours at pythia", W / 2, 1840);
+  ctx.fillText("cast yours at pythia.cyou", W / 2, 1840);
   ls(ctx, "0px");
 }
 
@@ -420,7 +420,7 @@ async function buildMatchStoryImage(d) {
 async function shareOrDownload(blob, filename, title, text) {
   const file = new File([blob], filename, { type: "image/png" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title, text });
+    await navigator.share({ files: [file], title, text, url: "https://pythia.cyou" });
   } else {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
