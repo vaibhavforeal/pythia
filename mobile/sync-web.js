@@ -1,0 +1,79 @@
+// Copies the web frontend into mobile/www for Capacitor to bundle.
+//
+// Two things this has to get right:
+//
+//   1. Entry point. Capacitor loads www/index.html, but in public/ that's the
+//      marketing landing page. Someone who downloaded the app has already been
+//      marketed to — the app must open on the app. So app.html becomes
+//      index.html in the bundle.
+//
+//   2. API base. Bundled assets are served from capacitor://localhost, so the
+//      frontend needs to know where the real API is. Injected here as a config
+//      script rather than hard-coded, so a staging build is one env var:
+//        PYTHIA_API_BASE=https://staging.pythia.cyou npm run sync
+//
+// Run via `npm run sync` (which then calls `cap sync`).
+
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = path.join(__dirname, "..");
+const SRC = path.join(ROOT, "public");
+const OUT = path.join(__dirname, "www");
+const API_BASE = process.env.PYTHIA_API_BASE || "https://pythia.cyou";
+
+// Server-rendered marketing pages have no place in an installed app; they'd
+// just be dead weight the store has to review.
+const SKIP = new Set(["index.html"]);
+
+function copyDir(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (SKIP.has(entry.name)) continue;
+    const src = path.join(from, entry.name);
+    const dest = path.join(to, entry.name);
+    if (entry.isDirectory()) copyDir(src, dest);
+    else fs.copyFileSync(src, dest);
+  }
+}
+
+if (!fs.existsSync(SRC)) {
+  console.error(`✗ No public/ directory at ${SRC}`);
+  process.exit(1);
+}
+
+fs.rmSync(OUT, { recursive: true, force: true });
+copyDir(SRC, OUT);
+
+// app.html is the real entry point.
+const appHtml = path.join(OUT, "app.html");
+if (!fs.existsSync(appHtml)) {
+  console.error("✗ public/app.html is missing — nothing to use as the app entry point.");
+  process.exit(1);
+}
+let html = fs.readFileSync(appHtml, "utf8");
+
+// Tell the frontend where the API lives, before api.js reads it.
+const ANCHOR = '<script src="api.js">';
+if (!html.includes(ANCHOR)) {
+  console.error("✗ Couldn't find api.js in app.html — the API base has nowhere to go.");
+  process.exit(1);
+}
+if (!html.includes("PYTHIA_API_BASE")) {
+  html = html.replace(
+    ANCHOR,
+    `<script>window.PYTHIA_API_BASE = ${JSON.stringify(API_BASE)};</script>\n    ${ANCHOR}`
+  );
+}
+
+fs.writeFileSync(path.join(OUT, "index.html"), html);
+fs.rmSync(appHtml);
+
+const count = (function walk(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .reduce((n, e) => n + (e.isDirectory() ? walk(path.join(dir, e.name)) : 1), 0);
+})(OUT);
+
+console.log(`✓ Synced ${count} files into mobile/www`);
+console.log(`  entry point : app.html → index.html`);
+console.log(`  API base    : ${API_BASE}`);

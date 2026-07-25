@@ -2011,6 +2011,8 @@ authForm.addEventListener("submit", async e => {
 
 $("logoutBtn").addEventListener("click", async () => {
   try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+  // Native builds hold the session in a token, not a cookie the server can clear.
+  if (window.PythiaAuth) window.PythiaAuth.clear();
   location.reload();
 });
 
