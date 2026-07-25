@@ -12,6 +12,7 @@ const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
 const oauth = require("./oauth");
+const cloudflare = require("./cloudflare");
 const streak = require("./streak");
 const invite = require("./invite");
 const phoneLib = require("./phone");
@@ -98,6 +99,32 @@ const app = express();
 // via TRUST_CLOUDFLARE=true, which doesn't depend on getting this count right.
 // See the clientIp() note in auth.js.
 app.set("trust proxy", Number(process.env.TRUST_PROXY || 1));
+
+// Cloudflare's ranges change rarely, so the bundled list is used by default.
+// CLOUDFLARE_IPS_REFRESH=true pulls the current lists at boot and keeps the
+// bundled ones if the fetch fails, so a network blip can't take the app down.
+if (String(process.env.CLOUDFLARE_IPS_REFRESH || "").toLowerCase() === "true") {
+  cloudflare.refresh()
+    .then(n => console.log(`  ℹ  Cloudflare IP ranges refreshed (${n} entries).`))
+    .catch(e => console.warn(`  ⚠  Cloudflare IP refresh failed, using bundled list: ${e.message}`));
+}
+
+// Rate limiting silently degrades if the client IP can't be determined, and a
+// degraded limiter looks exactly like a working one. Say what was detected on
+// the first API request so a misconfiguration is visible in the logs.
+let ipSourceLogged = false;
+app.use((req, _res, next) => {
+  if (!ipSourceLogged && req.path.startsWith("/api/")) {
+    ipSourceLogged = true;
+    const source = cloudflare.cameThroughCloudflare(req)
+      ? "CF-Connecting-IP (Cloudflare verified by IP range)"
+      : auth.TRUST_CLOUDFLARE
+        ? "CF-Connecting-IP (TRUST_CLOUDFLARE override — not verified)"
+        : `req.ip via trust proxy=${app.get("trust proxy")}`;
+    console.log(`  ℹ  Rate limiting keys on: ${source}`);
+  }
+  next();
+});
 
 // Optional hard lock against reaching the origin directly and skipping the
 // proxy (and therefore its WAF and the IP the limiter keys on). Set ORIGIN_SECRET

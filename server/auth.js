@@ -143,18 +143,24 @@ function checkOrigin(req, res, next) {
 // through the proxy, not just by bypassing it.
 //
 // Precedence:
-//   1. CF-Connecting-IP when TRUST_CLOUDFLARE=true. Cloudflare sets this to the
-//      real client and overwrites any copy the caller sent, so it's the one
-//      header that isn't caller-influenced — provided the origin can't be
-//      reached directly (see ORIGIN_SECRET in index.js).
+//   1. CF-Connecting-IP, but only when the request is *proven* to have come
+//      through Cloudflare — the connection is checked against Cloudflare's
+//      published ranges (see cloudflare.js). This needs no configuration and
+//      can't be left half-set: a request that didn't traverse Cloudflare simply
+//      doesn't get the header believed.
 //   2. req.ip, which Express derives from X-Forwarded-For honouring
 //      `trust proxy` — it walks from the RIGHT, over the hops your own
 //      infrastructure appended, so forged leading entries are ignored.
 //   3. The socket address, which cannot be forged at all.
+//
+// TRUST_CLOUDFLARE=true forces step 1 without the range check. That's strictly
+// weaker and only for a proxy that isn't Cloudflare-addressed; prefer leaving
+// it unset and letting detection do the work.
+const cloudflare = require("./cloudflare");
 const TRUST_CLOUDFLARE = String(process.env.TRUST_CLOUDFLARE || "").toLowerCase() === "true";
 
 function clientIp(req) {
-  if (TRUST_CLOUDFLARE) {
+  if (TRUST_CLOUDFLARE || cloudflare.cameThroughCloudflare(req)) {
     const cf = String(req.headers["cf-connecting-ip"] || "").trim();
     if (cf) return cf;
   }
