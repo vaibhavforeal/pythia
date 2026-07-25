@@ -91,6 +91,27 @@ const MATCH_NOTE =
 
 const app = express();
 
+// How many proxy hops sit in front of this process. Express uses this to derive
+// req.ip from X-Forwarded-For by walking from the RIGHT — over the entries your
+// own infrastructure appended — so a forged leading entry is ignored. Default 1
+// (Render's router); with Cloudflare in front as well, prefer CF-Connecting-IP
+// via TRUST_CLOUDFLARE=true, which doesn't depend on getting this count right.
+// See the clientIp() note in auth.js.
+app.set("trust proxy", Number(process.env.TRUST_PROXY || 1));
+
+// Optional hard lock against reaching the origin directly and skipping the
+// proxy (and therefore its WAF and the IP the limiter keys on). Set ORIGIN_SECRET
+// here and add the same value as a request header on a Cloudflare Transform
+// Rule; requests without it are refused. Inactive when unset.
+const ORIGIN_SECRET = (process.env.ORIGIN_SECRET || "").trim();
+if (ORIGIN_SECRET) {
+  app.use((req, res, next) => {
+    if (req.path === "/healthz") return next(); // platform health checks bypass the proxy
+    if (req.headers["x-origin-secret"] === ORIGIN_SECRET) return next();
+    res.status(403).type("text/plain").send("Direct origin access is not allowed.");
+  });
+}
+
 // Optional canonical-host redirect. Once a custom domain is live, set
 // CANONICAL_HOST (e.g. "pythia.cyou") to 301 every other host — the
 // onrender.com URL, www, etc. — to it. Keeping a single origin means the
@@ -443,12 +464,12 @@ app.delete("/api/people/:id", async (req, res) => {
 // Anonymous strangers can hit the two public routes below, so bound them.
 const inviteViewLimit = auth.rateLimiter({
   windowMs: 60 * 1000, max: 60,
-  key: req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(),
+  key: req => auth.clientIp(req),
   message: "Too many requests — give it a minute."
 });
 const inviteMatchLimit = auth.rateLimiter({
   windowMs: 10 * 60 * 1000, max: 20,
-  key: req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(),
+  key: req => auth.clientIp(req),
   message: "Too many compatibility checks — try again shortly."
 });
 

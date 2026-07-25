@@ -110,14 +110,23 @@ function requireAuth(req, res, next) {
 
 // Reject cross-origin state-changing requests (CSRF defence-in-depth; the
 // SameSite=Lax cookie already blocks most). GET/HEAD are exempt.
+//
+// X-Forwarded-Host is client-supplied, so it's only consulted when no canonical
+// host is configured. Set CANONICAL_HOST in production and the allowed set stops
+// depending on anything the caller can influence.
+const CANONICAL_HOST = (process.env.CANONICAL_HOST || "").trim().toLowerCase();
+
 function checkOrigin(req, res, next) {
   if (req.method === "GET" || req.method === "HEAD") return next();
   const origin = req.headers.origin;
   if (origin) {
-    // Behind a proxy (e.g. Render), the public host arrives as X-Forwarded-Host.
-    const allowed = new Set([req.headers.host, req.headers["x-forwarded-host"]].filter(Boolean));
+    const allowed = CANONICAL_HOST
+      ? new Set([CANONICAL_HOST])
+      : new Set([req.headers.host, req.headers["x-forwarded-host"]].filter(Boolean));
     try {
-      if (!allowed.has(new URL(origin).host)) return res.status(403).json({ error: "Bad origin." });
+      if (!allowed.has(new URL(origin).host.toLowerCase())) {
+        return res.status(403).json({ error: "Bad origin." });
+      }
     } catch {
       return res.status(403).json({ error: "Bad origin." });
     }
@@ -125,13 +134,39 @@ function checkOrigin(req, res, next) {
   next();
 }
 
+// --- Client IP ---------------------------------------------------------------
+// Rate limiting is only as good as the address it keys on, and X-Forwarded-For
+// is partly caller-supplied. Cloudflare APPENDS the real client to whatever
+// arrived, so a request carrying "X-Forwarded-For: 1.2.3.4" reaches the origin
+// as "1.2.3.4, <real client>, ...". Reading the LEFTMOST entry therefore keys
+// the limiter on an attacker-chosen value that they can rotate at will —
+// through the proxy, not just by bypassing it.
+//
+// Precedence:
+//   1. CF-Connecting-IP when TRUST_CLOUDFLARE=true. Cloudflare sets this to the
+//      real client and overwrites any copy the caller sent, so it's the one
+//      header that isn't caller-influenced — provided the origin can't be
+//      reached directly (see ORIGIN_SECRET in index.js).
+//   2. req.ip, which Express derives from X-Forwarded-For honouring
+//      `trust proxy` — it walks from the RIGHT, over the hops your own
+//      infrastructure appended, so forged leading entries are ignored.
+//   3. The socket address, which cannot be forged at all.
+const TRUST_CLOUDFLARE = String(process.env.TRUST_CLOUDFLARE || "").toLowerCase() === "true";
+
+function clientIp(req) {
+  if (TRUST_CLOUDFLARE) {
+    const cf = String(req.headers["cf-connecting-ip"] || "").trim();
+    if (cf) return cf;
+  }
+  return (req.ip || (req.socket && req.socket.remoteAddress) || "?").trim();
+}
+
 // Per-IP fixed-window limiter for login/register (brute-force protection).
 const attempts = new Map();
 const RL_WINDOW_MS = 15 * 60 * 1000;
 const RL_MAX = 12;
 function rateLimit(req, res, next) {
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?")
-    .split(",")[0].trim();
+  const ip = clientIp(req);
   const now = Date.now();
   let rec = attempts.get(ip);
   if (!rec || now > rec.resetAt) {
@@ -180,5 +215,6 @@ function rateLimiter({ windowMs, max, key, message }) {
 module.exports = {
   hashPassword, verifyPassword, makeSessionToken,
   setSessionCookie, clearSessionCookie, setCookie, clearCookie, parseCookies, currentUserId,
-  requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE
+  requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE,
+  clientIp, TRUST_CLOUDFLARE
 };
