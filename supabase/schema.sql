@@ -68,9 +68,39 @@ create table if not exists public.conversations (
 );
 create index if not exists idx_conversations_user on public.conversations(user_id, updated_at desc);
 
-alter table public.users         enable row level security;
-alter table public.people        enable row level security;
-alter table public.conversations enable row level security;
+-- Invite links ("cast your chart, we'll compare"). Read by anonymous visitors
+-- through the server only — the token is the capability, and the inviter's
+-- birth stays server-side rather than being encoded in a shareable URL.
+create table if not exists public.invites (
+  token      text primary key,
+  user_id    text not null,
+  name       text,                              -- shown on the public invite page
+  birth      jsonb not null,                    -- inviter's birth input, never sent to the invitee
+  role       text,                              -- 'groom' | 'bride', for directional Guna Milan
+  created_at timestamptz not null default now(),
+  expires_at timestamptz
+);
+create index if not exists idx_invites_user on public.invites(user_id, created_at desc);
+
+-- Who opened someone's link and checked. Summary only: the responder has no
+-- account and never agreed to us keeping their birth details.
+create table if not exists public.invite_responses (
+  id         text primary key,
+  token      text not null,
+  name       text,
+  total      integer,
+  max        integer,
+  band       text,
+  label      text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_invite_responses_token on public.invite_responses(token, created_at desc);
+
+alter table public.users            enable row level security;
+alter table public.people           enable row level security;
+alter table public.conversations    enable row level security;
+alter table public.invites          enable row level security;
+alter table public.invite_responses enable row level security;
 
 -- PostgREST (what supabase-js talks to) caches the table schema. After adding a
 -- column it will keep answering "column does not exist" until that cache is

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>(function(){try{var t=localStorage.getItem("theme");document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}catch(e){document.documentElement.setAttribute("data-theme","light");}})();</script>
+    <title>Check your compatibility · Pythia</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0284c7" />
+    <!-- The invite itself is private to whoever holds the link, so keep it out
+         of search results; the OG tags are for the chat app that unfurls it. -->
+    <meta name="robots" content="noindex" />
+    <meta property="og:title" content="Check our cosmic compatibility ✦" />
+    <meta property="og:description" content="Real 36-guna Vedic compatibility. Drop your birth details — no account needed." />
+    <meta property="og:image" content="https://pythia.cyou/og-image.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="invite-page">
+      <header class="invite-brand">
+        <img class="brand-mark" src="/logo.png" alt="" />
+        <span>Pythia</span>
+      </header>
+
+      <main class="invite-card" id="inviteCard">
+        <!-- Loading / error / form / result are swapped in here. -->
+        <div class="invite-state" id="inviteLoading">
+          <div class="invite-glyph">✦</div>
+          <p>Loading your invite…</p>
+        </div>
+
+        <div class="invite-state" id="inviteError" hidden>
+          <div class="invite-glyph">✧</div>
+          <h1>This link isn't working</h1>
+          <p id="inviteErrorMsg">It may have expired or been replaced.</p>
+          <a class="invite-cta" href="/app">Cast your own chart ✦</a>
+        </div>
+
+        <div id="inviteMain" hidden>
+          <div class="invite-hero">
+            <div class="invite-glyph" id="ivGlyph">✦</div>
+            <h1><b id="ivName">Someone</b> wants to check<br />your cosmic compatibility</h1>
+            <div class="invite-signs" id="ivSigns"></div>
+          </div>
+
+          <form class="invite-form" id="inviteForm">
+            <p class="invite-lead">Drop your birth details — no account needed.</p>
+
+            <label>Your name
+              <input type="text" id="g_name" maxlength="80" placeholder="e.g. Priya" autocomplete="off" />
+            </label>
+
+            <label>Birthday
+              <input type="date" id="g_dob" required />
+            </label>
+
+            <label>Time of birth
+              <input type="time" id="g_tob" step="60" />
+              <small>Don't know it? Leave it — we'll use 12:00.</small>
+            </label>
+
+            <label>Where you were born
+              <input list="g_cityList" id="g_city" placeholder="Type a city name…" autocomplete="off" />
+              <datalist id="g_cityList"></datalist>
+            </label>
+
+            <button type="button" class="advanced-toggle" id="g_advToggle" aria-expanded="false" aria-controls="g_advFields">
+              <span class="adv-label">enter coordinates manually</span><span class="adv-caret">▾</span>
+            </button>
+            <div class="advanced-fields" id="g_advFields" hidden>
+              <div class="row">
+                <label>Latitude<input type="number" id="g_lat" step="0.0001" placeholder="e.g. 19.0760" /></label>
+                <label>Longitude<input type="number" id="g_lon" step="0.0001" placeholder="e.g. 72.8777" /></label>
+              </div>
+              <label>UTC offset (hours)
+                <input type="number" id="g_tz" step="0.25" placeholder="e.g. 5.5" />
+              </label>
+            </div>
+
+            <button type="submit" id="g_submit">check our compatibility ✦</button>
+            <p class="err" id="g_err" hidden></p>
+            <p class="invite-privacy">Your details are used for this one check. We don't keep them.</p>
+          </form>
+
+          <div class="invite-result" id="ivResult" hidden></div>
+        </div>
+      </main>
+
+      <footer class="invite-foot">
+        <a href="/">What is Pythia?</a> · <a href="/privacy">Privacy</a>
+      </footer>
+    </div>
+
+    <script src="/geocode.js"></script>
+    <script src="/invite.js"></script>
+  </body>
+</html>

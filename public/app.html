@@ -52,6 +52,12 @@
           <button type="button" id="logoutBtn" class="logout">Log out</button>
         </div>
 
+        <!-- Your chart sticks once cast, so this is an edit affordance rather
+             than a prompt to cast again. Hidden until there's a chart. -->
+        <button type="button" class="form-toggle" id="formToggle" aria-expanded="true" aria-controls="birthForm" hidden>
+          <span class="ft-label">edit my birth details</span><span class="ft-caret">⌄</span>
+        </button>
+
         <form id="birthForm" class="birth-form">
           <h2>your birth deets</h2>
 
@@ -97,8 +103,39 @@
           <p class="err" id="formErr" hidden></p>
         </form>
 
-        <!-- Nerd mode: reveals the full expert tables at the foot of the
-             reading. Hidden until a chart exists, like the ship check below. -->
+        <!-- Whose chart is on screen. Your own is the profile and persists;
+             anyone else is a one-off view that is never saved as your profile. -->
+        <div class="profile-head" id="profileHead" hidden>
+          <span class="ph-who" id="phWho">your chart</span>
+          <button type="button" class="ph-back" id="backToMine" hidden>back to mine</button>
+        </div>
+
+        <!-- Your reading, as a persistent profile. Rendered on every cast. -->
+        <div class="profile" id="profile" hidden></div>
+
+        <button type="button" class="check-other" id="checkOther" hidden>check someone else ↗</button>
+
+        <!-- Invite link: they cast their own chart on a public page, no account
+             needed, and you both get the compatibility score. -->
+        <div class="invite-box" id="inviteBox" hidden>
+          <div class="aspects-title">Invite a friend</div>
+          <p class="invite-hint">Send a link — they drop their birth details, you both get the score. No account needed on their side.</p>
+          <div class="role-toggle role-mini">
+            <span>you're the</span>
+            <label><input type="radio" name="inviteRole" value="groom" checked /> guy ♂</label>
+            <label><input type="radio" name="inviteRole" value="bride" /> girl ♀</label>
+          </div>
+          <button type="button" id="inviteBtn">create my invite link ↗</button>
+          <div class="invite-link-row" id="inviteLinkRow" hidden>
+            <input type="text" id="inviteLink" readonly aria-label="Your invite link" />
+            <button type="button" id="inviteCopy">copy</button>
+          </div>
+          <p class="err" id="inviteErr" hidden></p>
+          <div class="invite-responses" id="inviteResponses"></div>
+        </div>
+
+        <!-- Nerd mode: reveals the full expert tables in the chat column.
+             Hidden until a chart exists, like the ship check below. -->
         <div class="nerd-switch" id="nerdSwitch" hidden>
           <label class="switch-row">
             <span class="switch-text">
@@ -183,9 +220,14 @@
 
       <!-- ===== Right panel: vibe feed + chat ===== -->
       <main class="chat">
+        <!-- Compact identity strip, pinned above the scroll area so it stays put
+             while the chat moves. The only shareable card, so Share lives here. -->
+        <div class="id-banner" id="idBanner" hidden></div>
+
         <div class="chat-scroll" id="messages">
-          <!-- The playful vibe-card feed renders here on cast; the chat flows below it. -->
-          <div id="feed" class="feed" hidden></div>
+          <!-- Nerd-mode tables: wide, so they belong in this column, not the
+               sidebar. Toggled by the sidebar switch. -->
+          <div id="nerdHost"></div>
           <div class="welcome" id="welcome">
             <div class="welcome-glyph">✦</div>
             <h2>your stars, decoded</h2>
@@ -247,7 +289,8 @@
     </div>
 
     <script src="theme.js"></script>
-    <!-- Yoga names + generated rarity table, both read by app.js. -->
+    <!-- Shared birth-form plumbing, yoga names, generated rarity table. -->
+    <script src="geocode.js"></script>
     <script src="yoga-names.js"></script>
     <script src="yoga-rarity.js"></script>
     <script src="app.js"></script>

@@ -13,8 +13,9 @@ const { CITIES } = require("./cities");
 const auth = require("./auth");
 const oauth = require("./oauth");
 const streak = require("./streak");
+const invite = require("./invite");
 const store = require("./store");
-const { users, people, conversations } = store;
+const { users, people, conversations, invites } = store;
 
 // --- Account helpers ---------------------------------------------------------
 const normalizeEmail = e => String(e || "").trim().toLowerCase();
@@ -95,6 +96,9 @@ app.get("/healthz", (_req, res) => res.json({ ok: true }));
 // ("/" → index.html landing is handled by express.static's directory index.)
 const page = f => (_req, res) => res.sendFile(path.join(__dirname, "..", "public", f));
 app.get("/app", page("app.html"));
+// Invite links are pasted into chats, so they get a short public URL. The page
+// itself is static; it reads the token from the path and calls /api/invite/*.
+app.get("/i/:token", page("invite.html"));
 app.get("/privacy", page("privacy.html"));
 app.get("/terms", page("terms.html"));
 
@@ -109,8 +113,12 @@ app.use("/api", (req, res, next) => {
 // Every /api route except /api/auth/* requires a valid session, and every
 // mutating request must be same-origin. Static assets (the SPA shell) stay
 // public so the login screen can load.
+// /api/invite/* is deliberately public: an invite that dead-ends at a signup
+// wall doesn't spread. checkOrigin still applies, and those handlers are
+// individually rate limited and never return the inviter's birth details.
+const PUBLIC_API = /^\/(auth|invite)\//;
 app.use("/api", auth.checkOrigin, (req, res, next) => {
-  if (req.path.startsWith("/auth/")) return next();
+  if (PUBLIC_API.test(req.path)) return next();
   return auth.requireAuth(req, res, next);
 });
 
@@ -252,6 +260,129 @@ app.delete("/api/people/:id", async (req, res) => {
   } catch (err) {
     console.error("delete person error:", err);
     res.status(500).json({ error: "Delete failed." });
+  }
+});
+
+// --- Invite links -----------------------------------------------------------
+// Flow: you mint a link → a friend opens it with no account → they enter their
+// own birth details → both of you get a compatibility card. See server/invite.js
+// for why the inviter's birth never travels in the URL or down to the invitee.
+
+// Anonymous strangers can hit the two public routes below, so bound them.
+const inviteViewLimit = auth.rateLimiter({
+  windowMs: 60 * 1000, max: 60,
+  key: req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(),
+  message: "Too many requests — give it a minute."
+});
+const inviteMatchLimit = auth.rateLimiter({
+  windowMs: 10 * 60 * 1000, max: 20,
+  key: req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(),
+  message: "Too many compatibility checks — try again shortly."
+});
+
+// Mint (or return) my invite link. One live link per user keeps it shareable
+// and means responses accumulate in one place.
+app.post("/api/invites", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const birth = parseBirth(b); // validates; throws HttpError
+    const role = b.role === "bride" ? "bride" : "groom";
+    const existing = await invites.forUser(req.userId);
+    if (existing && !invite.isExpired(existing)) {
+      await invites.remove(req.userId, existing.token); // details may have changed
+    }
+    const inv = {
+      token: invite.newToken(),
+      userId: req.userId,
+      name: invite.safeName(b.name, "Someone"),
+      birth,
+      role,
+      createdAt: new Date().toISOString(),
+      expiresAt: invite.expiryFrom(Date.now())
+    };
+    await invites.add(inv);
+    res.json({ token: inv.token, expiresAt: inv.expiresAt });
+  } catch (err) {
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    console.error("create invite error:", err);
+    res.status(500).json({ error: "Could not create your invite link." });
+  }
+});
+
+// Who has checked my link.
+app.get("/api/invites/responses", async (req, res) => {
+  try {
+    const mine = await invites.forUser(req.userId);
+    if (!mine) return res.json({ token: null, responses: [] });
+    res.json({ token: mine.token, responses: await invites.responses(mine.token) });
+  } catch (err) {
+    console.error("invite responses error:", err);
+    res.status(500).json({ error: "Could not load your invite responses." });
+  }
+});
+
+// PUBLIC: what a stranger holding the link may see — a name and signs, never
+// the inviter's birth date, time or place.
+app.get("/api/invite/:token", inviteViewLimit, async (req, res) => {
+  try {
+    const token = req.params.token;
+    if (!invite.isValidToken(token)) return res.status(404).json({ error: "Invite not found." });
+    const inv = await invites.get(token);
+    if (!inv) return res.status(404).json({ error: "Invite not found." });
+    if (invite.isExpired(inv)) return res.status(410).json({ error: "This invite has expired." });
+    res.json({ inviter: invite.publicInviter(inv, computeChart(parseBirth(inv.birth))) });
+  } catch (err) {
+    console.error("view invite error:", err);
+    res.status(500).json({ error: "Could not load this invite." });
+  }
+});
+
+// PUBLIC: the invitee posts their own birth details and gets the match back.
+// Deliberately does not reuse /api/match, whose response embeds both full
+// charts — that would hand the inviter's entire nativity to a stranger.
+app.post("/api/invite/:token/match", inviteMatchLimit, async (req, res) => {
+  try {
+    const token = req.params.token;
+    if (!invite.isValidToken(token)) return res.status(404).json({ error: "Invite not found." });
+    const inv = await invites.get(token);
+    if (!inv) return res.status(404).json({ error: "Invite not found." });
+    if (invite.isExpired(inv)) return res.status(410).json({ error: "This invite has expired." });
+
+    const theirs = parseBirth(req.body || {});
+    const inviterChart = computeChart(parseBirth(inv.birth));
+    const guestChart = computeChart(theirs);
+
+    // Guna Milan is directional, so map by the inviter's stated role.
+    const inviterIsGroom = inv.role !== "bride";
+    const boy = inviterIsGroom ? inviterChart : guestChart;
+    const girl = inviterIsGroom ? guestChart : inviterChart;
+
+    const result = computeGunaMilan(moonInputFromChart(boy), moonInputFromChart(girl));
+    const boyM = computeManglik(boy);
+    const girlM = computeManglik(girl);
+    result.manglik = { boy: boyM, girl: girlM, verdict: manglikVerdict(boyM, girlM) };
+
+    // Record a summary so the inviter can see who checked. No birth details —
+    // the responder has no account and consented to nothing beyond this check.
+    try {
+      await invites.addResponse({
+        id: crypto.randomUUID(),
+        token,
+        ...invite.responseSummary(req.body && req.body.name, result),
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error("invite response log failed:", e); // never fail the check over logging
+    }
+
+    res.json({
+      inviter: invite.publicInviter(inv, inviterChart),
+      match: invite.publicMatch(result)
+    });
+  } catch (err) {
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    console.error("invite match error:", err);
+    res.status(500).json({ error: "Compatibility check failed." });
   }
 });
 

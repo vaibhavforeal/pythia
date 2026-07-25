@@ -424,38 +424,148 @@ button {
    Cards carry their own vibrant gradients + white text, so they
    read the same in light and dark themes. The chat flows below.
    ============================================================ */
-.feed {
-  max-width: 720px; margin: 0 auto; padding: 6px 24px 2px;
-  display: flex; flex-direction: column; gap: 14px;
+/* ---------- Pinned identity banner (top of the chat column) ----------
+   Sits outside .chat-scroll, so it holds position while the chat moves. Kept
+   to one compact row: the full Cosmic ID lives in the sidebar profile. */
+.id-banner {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--elem, var(--sky));
 }
+.idb-glyph {
+  flex: 0 0 auto; font-size: 24px; line-height: 1;
+  color: var(--elem, var(--sky));
+}
+.idb-main { flex: 1 1 auto; min-width: 0; }
+.idb-triple {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+  font-family: var(--font-head); font-size: 15px; font-weight: 600; color: var(--ink);
+  line-height: 1.25;
+}
+.idb-triple i { font-style: normal; color: var(--muted); margin-right: 5px; font-size: 12.5px; }
+.idb-arch {
+  margin-top: 2px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--elem, var(--sky-deep));
+}
+.idb-share {
+  flex: 0 0 auto;
+  padding: 7px 14px; border-radius: 999px;
+  font: 600 12px var(--font); letter-spacing: .3px; color: #fff;
+  background: var(--sky); border: 1px solid transparent; cursor: pointer;
+  transition: filter .15s, transform .15s;
+}
+.idb-share:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.idb-share:disabled { opacity: .6; cursor: default; transform: none; }
 
-/* Hero: the Cosmic ID sits first and biggest. */
-.feed .cosmic-id {
-  margin: 0; padding: 24px 26px 22px; border-radius: 20px;
-  background: radial-gradient(circle at 90% 0%, rgba(99, 102, 241, 0.25) 0%, transparent 60%), linear-gradient(160deg, rgba(26, 25, 54, 0.96) 0%, rgba(12, 11, 28, 0.98) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-left: 4px solid #818cf8;
-  box-shadow: 0 16px 36px rgba(5, 8, 20, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+/* ---------- Sidebar profile (the reading, as persistent cards) ---------- */
+.profile { display: flex; flex-direction: column; gap: 10px; margin: 0 0 12px; }
+/* The cards were sized for a 720px feed column; the sidebar is ~300px. */
+.profile .vibe-card, .profile .cosmic-id {
+  padding: 14px 15px 13px; border-radius: 14px; margin: 0;
 }
-.feed .cid-head { font-size: 11px; letter-spacing: 1.8px; margin-bottom: 12px; color: rgba(165, 180, 252, 0.9); }
-.feed .cid-rows li { grid-template-columns: 24px 64px 1fr; gap: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding: 5px 0; }
-.feed .cid-val { font-size: 19px; }
-.feed .cid-vibe { font-size: 14px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(255, 255, 255, 0.15); }
-.feed .cid-actions { text-align: left; margin-top: 16px; }
-.feed .cid-share {
-  font-size: 13px; padding: 10px 18px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #fff; cursor: pointer; transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.feed .cid-share:hover { background: rgba(255, 255, 255, 0.24); border-color: rgba(255, 255, 255, 0.5); transform: translateY(-1px); }
+.profile .vibe-card:hover { transform: none; }
+.profile .vc-emoji { font-size: 22px; margin-bottom: 6px; }
+.profile .vc-kicker { font-size: 9.5px; letter-spacing: 1.2px; margin-bottom: 4px; }
+.profile .vc-head { font-size: 17px; margin: 2px 0 7px; }
+.profile .vc-line { font-size: 12.5px; line-height: 1.5; }
+.profile .vc-sub, .profile .vc-meta { font-size: 11px; margin-top: 8px; padding: 3px 9px; }
+.profile .pw-list { margin-top: 10px; gap: 8px; }
+.profile .pw-list li { padding: 8px 9px; gap: 9px; border-radius: 10px; }
+.profile .pw-emoji { font-size: 16px; }
+.profile .pw-list li b { font-size: 12.5px; }
+.profile .pw-list li small { font-size: 11px; line-height: 1.4; }
+.profile .vibe-cta { font-size: 12px; padding: 8px 12px; margin-top: 10px; }
+.profile .cid-watermark { font-size: 92px; }
+.profile .pw-rarest { font-size: 10.5px; margin-top: 9px; padding-top: 8px; }
 
-/* ---- Cosmic ID premium upgrades: element identity + zodiac glyphs ---- */
-/* Header row: title on the left, personalized element chip on the right. */
-.cid-top {
-  position: relative; z-index: 1;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-bottom: 14px;
+/* Whose chart is on screen. */
+.profile-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 2px 0 8px;
 }
+.ph-who {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase;
+  color: var(--muted);
+}
+.ph-who.is-other { color: var(--amber); }
+.ph-back {
+  flex: 0 0 auto; padding: 4px 10px; font-size: 10.5px; font-weight: 600;
+  color: var(--sky-deep); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+}
+.ph-back:hover { border-color: var(--sky); }
+/* A one-off view is visibly not your profile. */
+.viewing-other .profile { outline: 1px dashed var(--amber); outline-offset: 4px; border-radius: 4px; }
+
+.check-other {
+  width: 100%; margin: 0 0 16px; padding: 9px 12px;
+  font-size: 12px; font-weight: 600; color: var(--sky-deep);
+  background: var(--panel2); border: 1px dashed var(--line); border-radius: var(--radius-sm);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.check-other:hover { border-color: var(--sky); background: var(--sky-soft); }
+
+/* ---------- Invite box (sidebar) ---------- */
+.invite-box {
+  margin: 0 0 16px; padding: 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.invite-hint { font-size: 11px; line-height: 1.5; color: var(--muted); margin: 4px 0 9px; }
+.role-mini { font-size: 11px; margin-bottom: 9px; }
+.role-mini > span { color: var(--muted); margin-right: 4px; }
+#inviteBtn {
+  width: 100%; padding: 9px 12px; font-size: 12px; font-weight: 600;
+  color: #fff; background: var(--sky); border: none; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+#inviteBtn:hover { filter: brightness(1.07); }
+#inviteBtn:disabled { opacity: .6; cursor: default; }
+.invite-link-row { display: flex; gap: 6px; margin-top: 9px; }
+.invite-link-row input {
+  flex: 1 1 auto; min-width: 0; padding: 7px 9px; font-size: 11px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+#inviteCopy {
+  flex: 0 0 auto; padding: 7px 11px; font-size: 11px; font-weight: 600;
+  color: var(--sky-deep); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+#inviteCopy:hover { border-color: var(--sky); }
+.ir-title {
+  margin: 12px 0 6px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+}
+.invite-responses ul { list-style: none; margin: 0; padding: 0; }
+.invite-responses li {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid var(--line-soft); font-size: 11.5px;
+}
+.invite-responses li:last-child { border-bottom: none; }
+.ir-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ir-score {
+  flex: 0 0 auto; padding: 2px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--field); color: var(--muted);
+}
+.ir-excellent { background: rgba(16, 185, 129, .16); color: #059669; }
+.ir-good { background: rgba(56, 189, 248, .16); color: var(--sky-deep); }
+.ir-poor { background: rgba(251, 191, 36, .18); color: #b45309; }
+
+/* Collapsed birth form header. */
+.form-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 0 12px; padding: 9px 12px;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+  background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.form-toggle:hover { border-color: var(--sky); background: var(--sky-soft); }
+.ft-caret { color: var(--muted); font-size: 11px; }
+
 .cid-top .cid-head { margin: 0; }
 .cid-elem {
   flex: 0 0 auto;
@@ -514,12 +624,6 @@ button {
   text-align: right; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, .9);
 }
 /* Feed hero runs bigger, like the rest of the Cosmic ID there. */
-.feed .cid-arch { font-size: 11px; letter-spacing: 1.9px; margin: 16px 0 12px; }
-.feed .cid-stats { gap: 10px; }
-.feed .cid-stats li { grid-template-columns: 72px 1fr 30px; gap: 12px; }
-.feed .cid-stat-label { font-size: 10px; }
-.feed .cid-bar { height: 8px; }
-.feed .cid-stat-val { font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .cid-bar i { animation: none; }
@@ -531,15 +635,6 @@ button {
   background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
 }
 /* The Moon is the identity headline — give its value top billing. */
-.feed .cid-rows { gap: 5px; }
-.feed .cid-rows li:first-child .cid-val { font-size: 22px; }
-/* Share button gets a soft element-tinted glow. */
-.feed .cid-share {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 6px 20px -9px var(--elem, #818cf8);
-}
-.feed .cid-share:hover {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 9px 24px -9px var(--elem, #818cf8);
-}
 
 /* Base playful card */
 .vibe-card {
@@ -680,6 +775,9 @@ button {
 }
 /* No header button above it any more, so the panel carries its own top pad. */
 .nerd-panel { padding: 16px; }
+/* Host in the chat column — takes the centering the old feed wrapper gave it. */
+#nerdHost { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+#nerdHost:empty { display: none; }
 
 /* ---------- Sidebar switch that drives nerd mode ----------
    Lives in the panel with the other preferences; the tables it reveals sit at
@@ -1069,8 +1167,13 @@ button {
      top gutter so messages don't start with a double gap. */
   .daily-weather { margin: 62px 16px 0; }
   .daily-weather:not([hidden]) + .chat-scroll { padding-top: 14px; }
+  /* The banner sits under the fixed branding bar and then owns the top gutter,
+     so the scroll area drops its own clearance (same trick as daily-weather). */
+  .id-banner { margin-top: 52px; padding: 9px 14px; }
+  .id-banner:not([hidden]) + .chat-scroll { padding-top: 14px; }
+  .idb-triple { font-size: 13.5px; gap: 2px 11px; }
+  .idb-glyph { font-size: 20px; }
   .msg { padding: 0 14px; gap: 10px; }
-  .feed { padding-left: 14px; padding-right: 14px; }
   .suggestions, .composer { padding-left: 14px; padding-right: 14px; }
   .welcome { margin-top: 6vh; }
 
@@ -1090,11 +1193,9 @@ button {
   .welcome h2 { font-size: 20px; }
   .welcome-glyph { font-size: 34px; }
   .auth-box { padding: 22px 18px; }
-  /* Playful cards: a touch tighter on phones */
-  .feed { gap: 12px; }
-  .vibe-card, .feed .cosmic-id { padding: 16px 17px 15px; border-radius: 18px; }
-  .vc-emoji { font-size: 31px; }
-  .vc-head { font-size: 22px; }
+  /* Cards live in the sidebar drawer on phones — .profile already sizes them. */
+  .id-banner { padding: 8px 12px; gap: 9px; }
+  .idb-share { padding: 6px 11px; font-size: 11.5px; }
 }
 
 /* ================= Public site: landing + legal pages ================= */
@@ -1282,3 +1383,109 @@ button {
 .theme-toggle::before { content: "🌙"; }
 [data-theme="dark"] .theme-toggle::before { content: "☀️"; }
 .nav-actions { display: flex; align-items: center; gap: 12px; }
+
+/* ================= Public invite page (/i/<token>) ================= */
+/* Standalone page with no app shell: a stranger with a link, no account. */
+.invite-page {
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  padding: 20px 16px 32px; background: var(--bg);
+}
+.invite-brand {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 18px;
+  font-family: var(--font-head); font-size: 17px; font-weight: 600; color: var(--sky-deep);
+}
+.invite-brand .brand-mark { width: 28px; height: 28px; }
+.invite-card {
+  width: 100%; max-width: 480px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  padding: 26px 24px;
+}
+.invite-state { text-align: center; padding: 20px 0; }
+.invite-glyph { font-size: 38px; line-height: 1; color: var(--sky); }
+.invite-hero { text-align: center; margin-bottom: 20px; }
+.invite-hero h1 {
+  font-family: var(--font-head); font-size: 22px; font-weight: 600;
+  line-height: 1.35; color: var(--ink); margin: 10px 0 12px;
+}
+.invite-hero h1 b { color: var(--sky-deep); }
+.invite-signs {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+}
+.invite-signs span {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 12px; color: var(--ink);
+  background: var(--field); border: 1px solid var(--line);
+}
+.invite-signs i { font-style: normal; color: var(--muted); }
+.invite-lead {
+  text-align: center; font-size: 13px; color: var(--muted);
+  margin: 0 0 16px; padding-top: 16px; border-top: 1px solid var(--line);
+}
+.invite-form button[type="submit"] {
+  width: 100%; margin-top: 6px; padding: 12px;
+  font-family: var(--font-head); font-size: 15px; font-weight: 600;
+  color: #fff; background: var(--sky); border: none; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.invite-form button[type="submit"]:hover { filter: brightness(1.07); }
+.invite-form button[type="submit"]:disabled { opacity: .6; cursor: default; }
+.invite-privacy {
+  margin: 12px 0 0; text-align: center; font-size: 11px; color: var(--faint); line-height: 1.5;
+}
+.invite-cta {
+  display: inline-block; margin-top: 12px; padding: 11px 20px;
+  font-family: var(--font-head); font-size: 15px; font-weight: 600;
+  color: #fff; background: var(--sky); border-radius: 999px; text-decoration: none;
+}
+.invite-cta:hover { filter: brightness(1.07); }
+.invite-foot { margin-top: 20px; font-size: 12px; color: var(--muted); }
+.invite-foot a { color: var(--sky-deep); }
+
+/* Result */
+.ivr-head { text-align: center; padding-bottom: 4px; }
+.ivr-emoji { font-size: 34px; line-height: 1; }
+.ivr-score {
+  font-family: var(--font-head); font-size: 44px; font-weight: 700;
+  color: var(--ink); line-height: 1.1; margin-top: 6px;
+}
+.ivr-score small { font-size: 20px; color: var(--muted); font-weight: 600; }
+.ivr-verdict {
+  font-family: var(--font-head); font-style: italic; font-size: 19px;
+  color: var(--sky-deep); margin-top: 4px;
+}
+.ivr-sub { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.ivr-who {
+  margin-top: 12px; font-family: var(--font-head); font-size: 15px; color: var(--ink);
+}
+.ivr-who i { font-style: normal; color: var(--muted); margin: 0 7px; }
+.ivr-kutas {
+  list-style: none; margin: 18px 0 0; padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px;
+}
+.ivr-kutas li {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 12px; color: var(--muted);
+}
+.ivr-kutas b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.ivr-flags {
+  margin-top: 14px; padding: 11px 13px;
+  background: var(--field); border-radius: var(--radius-sm);
+  font-size: 12px; line-height: 1.55; color: var(--muted);
+}
+.ivr-flags p { margin: 0 0 6px; }
+.ivr-flags p:last-child { margin-bottom: 0; }
+.ivr-cta {
+  margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); text-align: center;
+}
+.ivr-cta p { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.55; }
+.ivr-cta small { display: block; margin-top: 8px; font-size: 11px; color: var(--faint); }
+
+@media (max-width: 480px) {
+  .invite-card { padding: 20px 16px; }
+  .invite-hero h1 { font-size: 19px; }
+  .ivr-score { font-size: 38px; }
+  .ivr-kutas { grid-template-columns: 1fr; }
+}

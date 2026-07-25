@@ -66,76 +66,8 @@ if (window.marked) {
   marked.setOptions({ breaks: true, gfm: true });
 }
 
-// ---- Live city geocoding --------------------------------------------------
-const escAttr = s =>
-  String(s).replace(/[&"<>]/g, c => ({ "&": "&amp;", '"': "&quot;", "<": "&lt;", ">": "&gt;" }[c]));
-
-// Wire a city <input> + its <datalist> to /api/geocode: as the user types,
-// fetch matching places into the datalist; selecting one fills lat/lon/tz.
-// Fields stay editable, so a manual override always wins.
-function wireCityGeocode(cityEl, listEl, latEl, lonEl, tzEl) {
-  const byLabel = new Map(); // option label -> { lat, lon, tz }
-  let timer = null;
-  let lastQuery = "";
-  let fromPick = false; // true while lat/lon/tz hold values we filled from a pick
-
-  const apply = m => {
-    latEl.value = m.lat;
-    lonEl.value = m.lon;
-    // A place with no known timezone yields tz: null — blank the field rather
-    // than leaving the previous city's offset behind (it's hidden by default).
-    tzEl.value = m.tz === null || m.tz === undefined ? "" : m.tz;
-    fromPick = true;
-  };
-
-  // Typing past a picked city invalidates its coordinates: drop them so we
-  // can't cast a chart for one place while the city box names another.
-  const dropPicked = () => {
-    if (!fromPick) return;
-    latEl.value = lonEl.value = tzEl.value = "";
-    fromPick = false;
-  };
-
-  // A manual edit takes ownership of the fields — never wipe those.
-  [latEl, lonEl, tzEl].forEach(el => el.addEventListener("input", () => (fromPick = false)));
-
-  async function search(q) {
-    try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      byLabel.clear();
-      listEl.innerHTML = (data.results || [])
-        .map(r => {
-          let label = [r.name, r.admin1, r.country].filter(Boolean).join(", ");
-          if (byLabel.has(label)) label += ` (${r.lat}, ${r.lon})`;
-          byLabel.set(label, { lat: r.lat, lon: r.lon, tz: r.tz });
-          return `<option value="${escAttr(label)}"></option>`;
-        })
-        .join("");
-    } catch {
-      /* network hiccup — leave prior options; manual entry still works */
-    }
-  }
-
-  cityEl.addEventListener("input", () => {
-    // Choosing a suggestion drops its full label into the field — fill on match.
-    if (byLabel.has(cityEl.value)) return apply(byLabel.get(cityEl.value));
-    dropPicked();
-    const q = cityEl.value.trim();
-    if (q.length < 2 || q === lastQuery) return;
-    lastQuery = q;
-    clearTimeout(timer);
-    timer = setTimeout(() => search(q), 250);
-  });
-  cityEl.addEventListener("change", () => {
-    if (byLabel.has(cityEl.value)) apply(byLabel.get(cityEl.value));
-  });
-
-  // Lets callers that fill lat/lon/tz themselves (e.g. loading a saved person)
-  // claim the fields, so later city typing doesn't clear them as stale picks.
-  return () => (fromPick = false);
-}
-
+// escAttr / wireCityGeocode / coordsMissing live in geocode.js (shared with
+// the public invite page); that script loads first.
 const releaseCoords = wireCityGeocode(cityInput, cityList, $("lat"), $("lon"), $("tz"));
 
 // ---- "Enter coordinates manually" toggle ----------------------------------
@@ -158,11 +90,76 @@ function wireAdvanced(toggleId, fieldsId) {
 }
 const revealAdvanced = wireAdvanced("advToggle", "advFields");
 
-// True only when lat, lon and tz are all present (a picked city fills them).
-// tz can legitimately be "0" (UTC), so test for empty strings, not falsiness.
-function coordsMissing(latEl, lonEl, tzEl) {
-  return [latEl, lonEl, tzEl].some(el => String(el.value).trim() === "");
+// ---- Birth form collapse --------------------------------------------------
+// Mirrors wireAdvanced's toggle vocabulary. The form starts open (nothing cast
+// yet) and collapses once there's a chart, since your chart sticks.
+function setFormOpen(open) {
+  const f = $("birthForm"), t = $("formToggle");
+  if (!f || !t) return;
+  f.hidden = !open;
+  t.hidden = false;
+  t.setAttribute("aria-expanded", open ? "true" : "false");
+  const label = t.querySelector(".ft-label");
+  if (label) label.textContent = open ? "hide birth details" : "edit my birth details";
+  const caret = t.querySelector(".ft-caret");
+  if (caret) caret.textContent = open ? "⌃" : "⌄";
 }
+
+// Drop a birth input back into the form fields.
+function fillBirthForm(b) {
+  if (!b) return;
+  $("name").value = b.name && b.name !== "Unnamed" ? b.name : "";
+  $("dob").value = `${b.year}-${pad(b.month)}-${pad(b.day)}`;
+  $("tob").value = `${pad(b.hour)}:${pad(b.minute)}`;
+  $("lat").value = b.lat;
+  $("lon").value = b.lon;
+  $("tz").value = b.tz;
+  $("city").value = "";
+  releaseCoords(); // these coordinates are the saved ones, not a city pick
+}
+
+function setupChartControls() {
+  const toggle = $("formToggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const opening = $("birthForm").hidden;
+      // While a one-off chart is on screen the fields hold *their* details, so
+      // reload yours — otherwise "edit my birth details" would quietly save
+      // someone else's birth as your profile.
+      if (opening && viewingOther) fillBirthForm(loadMyBirth());
+      setFormOpen(opening);
+    });
+  }
+
+  const other = $("checkOther");
+  if (other) {
+    other.addEventListener("click", () => {
+      pendingOther = true;
+      setFormOpen(true);
+      // Blank the identity fields so nobody accidentally recasts themselves,
+      // and drop the coordinates so a stale city can't be reused.
+      for (const id of ["name", "city", "dob", "tob", "lat", "lon", "tz"]) {
+        const el = $(id);
+        if (el) el.value = "";
+      }
+      releaseCoords();
+      $("formErr").hidden = true;
+      $("name").focus();
+    });
+  }
+
+  const back = $("backToMine");
+  if (back) {
+    back.addEventListener("click", async () => {
+      const mine = loadMyBirth();
+      if (!mine) return;
+      pendingOther = false;
+      lastInput = mine;
+      if (await castChart(mine, true)) setViewing(null);
+    });
+  }
+}
+setupChartControls();
 
 // ---- Cast chart -----------------------------------------------------------
 form.addEventListener("submit", async e => {
@@ -193,11 +190,165 @@ form.addEventListener("submit", async e => {
     year, month, day, hour, minute,
     lat: $("lat").value, lon: $("lon").value, tz: $("tz").value
   };
-  await castChart(lastInput, true);
+  // A cast started from "check someone else" is a one-off view; anything else
+  // is you, and becomes the profile that sticks.
+  const asOther = pendingOther;
+  pendingOther = false;
+  const ok = await castChart(lastInput, true);
+  if (!ok) return; // cast failed — leave whatever was on screen alone
+  if (asOther) setViewing(lastInput.name || "their chart");
+  else { saveMyBirth(lastInput); setViewing(null); }
 });
+
+// ---- Invite links ---------------------------------------------------------
+// "cast your chart, we'll compare": mint a link, they open it with no account,
+// you both get the score. The link always encodes YOUR birth — deliberately
+// read from myBirth, not lastInput, so minting while viewing someone else's
+// chart can't send their details out into the world.
+function inviteUrl(token) {
+  return `${location.origin}/i/${token}`;
+}
+
+async function createInvite() {
+  const btn = $("inviteBtn"), err = $("inviteErr");
+  const mine = loadMyBirth();
+  if (!mine) {
+    err.textContent = "Cast your own chart first.";
+    err.hidden = false;
+    return;
+  }
+  err.hidden = true;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Creating…";
+  try {
+    const roleEl = document.querySelector('input[name="inviteRole"]:checked');
+    const res = await fetch("/api/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...mine, role: roleEl ? roleEl.value : "groom" })
+    });
+    if (res.status === 401) return showAuth();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not create your link.");
+
+    const url = inviteUrl(data.token);
+    $("inviteLink").value = url;
+    $("inviteLinkRow").hidden = false;
+    await shareInvite(url);
+    loadInviteResponses();
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+// Native share sheet where it exists (that's where the link actually spreads),
+// clipboard otherwise. Neither is guaranteed, so the URL stays on screen too.
+async function shareInvite(url) {
+  const text = "check our cosmic compatibility ✦";
+  try {
+    if (navigator.share) return await navigator.share({ title: "Pythia", text, url });
+  } catch (e) {
+    if (e && e.name === "AbortError") return; // user dismissed the sheet
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("link copied ✦");
+  } catch (_) {
+    $("inviteLink").select();
+  }
+}
+
+async function loadInviteResponses() {
+  const host = $("inviteResponses");
+  if (!host) return;
+  try {
+    const res = await fetch("/api/invites/responses");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.token) {
+      $("inviteLink").value = inviteUrl(data.token);
+      $("inviteLinkRow").hidden = false;
+    }
+    const rows = (data.responses || []).map(r => {
+      const score = Number.isFinite(r.total) ? `${fmtScore(r.total)}/${r.max}` : "—";
+      return `<li><span class="ir-name">${escAttr(r.name || "Someone")}</span>
+        <span class="ir-score ir-${escAttr(r.band || "average")}">${score}</span></li>`;
+    }).join("");
+    host.innerHTML = rows
+      ? `<div class="ir-title">who's checked</div><ul>${rows}</ul>`
+      : "";
+  } catch (_) {
+    /* the invite box still works without the list */
+  }
+}
+
+function setupInvite() {
+  const btn = $("inviteBtn");
+  if (btn) btn.addEventListener("click", createInvite);
+  const copy = $("inviteCopy");
+  if (copy) {
+    copy.addEventListener("click", async () => {
+      const url = $("inviteLink").value;
+      if (url) await shareInvite(url);
+    });
+  }
+}
+setupInvite();
+
+// ---- Whose chart is on screen ---------------------------------------------
+// Your own chart is the profile: stored locally and restored on load, so it
+// never has to be cast again. Anyone else is a transient view — never written
+// to myBirth, never becomes the profile.
+const MY_BIRTH_KEY = "myBirth";
+let pendingOther = false; // the next submit is a one-off, not you
+let viewingOther = false;
+
+function saveMyBirth(input) {
+  try { localStorage.setItem(MY_BIRTH_KEY, JSON.stringify(input)); } catch (_) { /* private mode */ }
+}
+function loadMyBirth() {
+  try {
+    const raw = localStorage.getItem(MY_BIRTH_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && Number.isFinite(Number(v.year)) ? v : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// label === null means "this is you".
+function setViewing(label) {
+  viewingOther = label !== null;
+  const who = $("phWho"), back = $("backToMine"), head = $("profileHead");
+  if (head) head.hidden = false;
+  if (who) {
+    who.textContent = viewingOther ? `viewing · ${label}` : "your chart";
+    who.classList.toggle("is-other", viewingOther);
+  }
+  if (back) back.hidden = !viewingOther;
+  const app = document.querySelector(".app");
+  if (app) app.classList.toggle("viewing-other", viewingOther);
+}
+
+// Restore the profile on load so a returning user lands on their own chart.
+async function restoreMyChart() {
+  const mine = loadMyBirth();
+  if (!mine) return false;
+  lastInput = mine;
+  const ok = await castChart(mine, true);
+  if (ok) setViewing(null);
+  return ok;
+}
 
 // Compute (or recompute) the chart. reset=true starts a fresh consultation;
 // reset=false (node-aspect toggle) keeps the ongoing conversation.
+// Returns true only if a new chart was actually cast — a failure leaves the
+// previous `chart` in place, so callers can't use it to detect success.
 async function castChart(input, reset) {
   const btn = $("computeBtn");
   btn.disabled = true;
@@ -208,7 +359,7 @@ async function castChart(input, reset) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...input, nodeMode })
     });
-    if (res.status === 401) { showAuth(); return; }
+    if (res.status === 401) { showAuth(); return false; }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to compute chart.");
 
@@ -223,10 +374,16 @@ async function castChart(input, reset) {
       highlightActiveConv();
       const mr = $("matchResult");
       if (mr) { mr.hidden = true; mr.innerHTML = ""; }
+      // A new person means any prior ship check is stale, so fold the form
+      // away again — the ship-check card reopens it on demand.
+      const mc = $("matchCard");
+      if (mc) mc.hidden = true;
     }
     renderChartCard(data);
+    return true;
   } catch (err) {
     showFormErr(err.message);
+    return false;
   } finally {
     btn.disabled = false;
     btn.textContent = "cast my chart ✦";
@@ -385,9 +542,6 @@ function renderCosmicId(c) {
       <div class="cid-arch">${archetype}</div>
       <ul class="cid-stats">${bars}</ul>
       <div class="cid-vibe">“${vibe}”</div>
-      <div class="cid-actions">
-        <button type="button" class="cid-share" id="cidShare">Share your ID ✦</button>
-      </div>
     </div>`;
 }
 
@@ -799,7 +953,8 @@ function fmtWeatherDate(iso) {
 }
 
 // ---- Vibe-card feed builders ----------------------------------------------
-// Each returns an HTML string; renderChartCard stitches them into #feed. The
+// Each returns an HTML string; renderChartCard stitches them into the sidebar
+// profile (#profile). The
 // "go deeper →" buttons carry a data-cta the delegated handler turns into a
 // grounded chat question (see handleCta).
 
@@ -950,41 +1105,94 @@ function renderShipCta() {
     </div>`;
 }
 
-// ---- Render the vibe feed (playful cards) + nerd panel --------------------
-// Called on every cast (and node-toggle recompute). Rebuilds #feed; the chat
-// history below it is untouched. Interactions are delegated once (setupFeed).
+// ---- Compact identity strip, pinned above the chat ------------------------
+// The one card that turns into a shareable image, so Share lives here. The
+// full Cosmic ID (stat bars, vibe quote) sits in the sidebar profile.
+function renderIdBanner(c) {
+  const moon = c.planets.find(p => p.key === "Moon") || {};
+  const asc = c.ascendant || {};
+  const mi = moon.signIndex;
+  const el = Number.isInteger(mi) ? elementOf(mi) : ELEMENTS[0];
+  const star = (c.dasha && c.dasha.moonNakshatra) || moon.nakshatra || "";
+  const { archetype } = cosmicStats(c);
+  const glyph = Number.isInteger(mi) ? ZODIAC_GLYPH[mi] : "✦";
+  return `
+    <div class="idb-glyph" aria-hidden="true">${glyph}</div>
+    <div class="idb-main">
+      <div class="idb-triple">
+        <span><i>☾</i>${escAttr(moon.sign || "—")}</span>
+        <span><i>★</i>${escAttr(star || "—")}</span>
+        <span><i>↑</i>${escAttr(asc.sign || "—")}</span>
+      </div>
+      <div class="idb-arch">${escAttr(archetype)}</div>
+    </div>
+    <button type="button" class="cid-share idb-share" id="cidShare">Share ✦</button>`;
+}
+
+// ---- Render the reading ---------------------------------------------------
+// Called on every cast (and node-toggle recompute). Fills three stable hosts:
+// the pinned banner, the sidebar profile, and the nerd tables in the chat
+// column. Interactions are delegated once (setupCards).
 function renderChartCard(c) {
-  const feed = $("feed");
-  if (!feed) return;
-  feed.hidden = false;
-  $("matchCard").hidden = false;
+  const banner = $("idBanner");
+  if (banner) {
+    banner.hidden = false;
+    banner.style.setProperty("--elem", (cosmicIdElement(c) || ELEMENTS[0]).color);
+    banner.innerHTML = renderIdBanner(c);
+  }
 
-  feed.innerHTML =
-    renderCosmicId(c) +
-    renderTodayCard(c) +
-    renderEraCard(c) +
-    renderPowerCard(c) +
-    renderHeadsUpCard(c) +
-    renderShipCta() +
-    `<div class="nerd-card"${nerdOpen ? "" : " hidden"}>
-      <div class="nerd-panel"><div class="chart-card nerd-inner">${renderNerdPanel(c)}</div></div>
-    </div>`;
+  const profile = $("profile");
+  if (profile) {
+    profile.hidden = false;
+    profile.innerHTML =
+      renderCosmicId(c) +
+      renderTodayCard(c) +
+      renderEraCard(c) +
+      renderPowerCard(c) +
+      renderHeadsUpCard(c) +
+      renderShipCta();
+  }
 
-  // The sidebar switch drives the panel, so it only makes sense once a chart
-  // exists — reveal it on the first cast, same as the ship check.
+  const nerdHost = $("nerdHost");
+  if (nerdHost) {
+    nerdHost.innerHTML =
+      `<div class="nerd-card"${nerdOpen ? "" : " hidden"}>
+        <div class="nerd-panel"><div class="chart-card nerd-inner">${renderNerdPanel(c)}</div></div>
+      </div>`;
+  }
+
+  // The ship-check form stays hidden until the card is clicked (openShipCheck).
+  // These only make sense once a chart exists — reveal on the first cast.
   const sw = $("nerdSwitch");
   if (sw) sw.hidden = false;
   const cb = $("nerdMode");
   if (cb) cb.checked = nerdOpen;
+  const co = $("checkOther");
+  if (co) co.hidden = false;
+  // The invite always encodes your own birth, so it needs a stored profile
+  // rather than merely a chart on screen.
+  const ib = $("inviteBox");
+  if (ib) ib.hidden = !loadMyBirth();
+  const fh = $("profileHead");
+  if (fh) fh.hidden = false;
 
-  // Once the feed is up, the welcome placeholder is redundant.
+  // The form has done its job; the profile owns the top of the sidebar now.
+  setFormOpen(false);
+
+  // Once the reading is up, the welcome placeholder is redundant.
   const w = $("welcome");
   if (w) w.remove();
 }
 
+// Moon-sign element, used for the banner accent.
+function cosmicIdElement(c) {
+  const moon = (c.planets || []).find(p => p.key === "Moon") || {};
+  return Number.isInteger(moon.signIndex) ? elementOf(moon.signIndex) : ELEMENTS[0];
+}
+
 // The full expert tables (unchanged content) — shown only inside "nerd mode".
 // Selects are pre-rendered to their current selection; a delegated change
-// handler (setupFeed) updates the varga / BAV bodies and the node convention.
+// handler (setupCards) updates the varga / BAV bodies and the node convention.
 function renderNerdPanel(c) {
   const rows = c.planets
     .map(
@@ -1117,7 +1325,7 @@ function setupNerdSwitch() {
   cb.addEventListener("change", () => {
     nerdOpen = cb.checked;
     try { localStorage.setItem("nerdMode", nerdOpen ? "1" : "0"); } catch (_) { /* private mode */ }
-    const card = document.querySelector("#feed .nerd-card");
+    const card = document.querySelector("#nerdHost .nerd-card");
     if (card) card.hidden = !nerdOpen;
     // Jumping to the tables makes the switch feel connected to something that
     // is otherwise off-screen at the bottom of the reading.
@@ -1126,17 +1334,27 @@ function setupNerdSwitch() {
 }
 setupNerdSwitch();
 
-// One-time delegated wiring for the feed. #feed is rebuilt on every cast, so we
-// bind on the stable container rather than on each generated button/select.
-function setupFeed() {
-  const feed = $("feed");
-  if (!feed) return;
+// One-time delegated wiring. The banner, profile and nerd host are stable
+// elements whose contents are rebuilt on every cast, so bind on those rather
+// than on each generated button/select.
+function setupCards() {
+  const banner = $("idBanner");
+  if (banner) {
+    banner.addEventListener("click", e => {
+      if (e.target.closest(".cid-share") && chart) shareCosmicId(chart);
+    });
+  }
 
-  feed.addEventListener("click", e => {
-    const cta = e.target.closest(".vibe-cta");
-    if (cta) return handleCta(cta.dataset.cta);
-    if (e.target.closest(".cid-share")) { if (chart) shareCosmicId(chart); return; }
-  });
+  const profile = $("profile");
+  if (profile) {
+    profile.addEventListener("click", e => {
+      const cta = e.target.closest(".vibe-cta");
+      if (cta) handleCta(cta.dataset.cta);
+    });
+  }
+
+  const feed = $("nerdHost");
+  if (!feed) return;
 
   feed.addEventListener("change", e => {
     const t = e.target;
@@ -1189,17 +1407,20 @@ function handleCta(kind) {
   if (q) sendMessage(q);
 }
 
-// Reveal the Ship-check form (opens the sidebar drawer on mobile) and scroll to it.
+// Reveal the Ship-check form (opens the sidebar drawer on mobile) and scroll to
+// it. This is the only thing that unhides it — the form is otherwise absent, so
+// the ship-check card is the single entry point.
 function openShipCheck() {
   const card = $("matchCard");
   if (!card) return;
+  card.hidden = false;
   setPanelOpen(true);
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   const first = $("m_dob");
   if (first) setTimeout(() => first.focus({ preventScroll: true }), 320);
 }
 
-setupFeed();
+setupCards();
 
 function ordJS(n) {
   const s = ["th", "st", "nd", "rd"];
@@ -1646,6 +1867,9 @@ function onAuthed(user) {
   loadPeople();
   loadConversations();
   checkInStreak();
+  loadInviteResponses();
+  // Your chart sticks: bring it straight back rather than making you cast again.
+  restoreMyChart();
 }
 
 // ---- Daily streak ---------------------------------------------------------
@@ -1869,7 +2093,11 @@ function loadPerson(p) {
     year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute,
     lat: p.lat, lon: p.lon, tz: p.tz
   };
-  castChart(lastInput, true); // resets the consultation, same as a fresh submit
+  // Opening a saved person is a one-off view, not a change of profile — your
+  // own chart stays in myBirth and is one "back to mine" away.
+  castChart(lastInput, true).then(ok => {
+    if (ok) setViewing(p.name === "Unnamed" ? "their chart" : p.name);
+  });
 }
 
 savePersonBtn.addEventListener("click", async () => {

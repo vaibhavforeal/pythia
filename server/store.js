@@ -12,6 +12,12 @@ const fs = require("fs");
 const URL = (process.env.SUPABASE_URL || "").trim();
 const KEY = (process.env.SUPABASE_SERVICE_KEY || "").trim();
 
+// Postgres columns are snake_case; the rest of the app speaks camelCase.
+const fromInviteRow = r => ({
+  token: r.token, userId: r.user_id, name: r.name, birth: r.birth,
+  role: r.role, createdAt: r.created_at, expiresAt: r.expires_at
+});
+
 // --- Supabase Postgres backend ----------------------------------------------
 function supabaseBackend(url, key) {
   if (!/^https?:\/\//i.test(url)) {
@@ -100,6 +106,52 @@ function supabaseBackend(url, key) {
         return true;
       }
     },
+    invites: {
+      async forUser(userId) {
+        const { data, error } = await sb.from("invites").select("*")
+          .eq("user_id", userId).order("created_at", { ascending: false }).limit(1);
+        if (error) throw error;
+        return (data && data[0]) ? fromInviteRow(data[0]) : undefined;
+      },
+      async get(token) {
+        const { data, error } = await sb.from("invites").select("*").eq("token", token).maybeSingle();
+        if (error) throw error;
+        return data ? fromInviteRow(data) : undefined;
+      },
+      async add(inv) {
+        const { error } = await sb.from("invites").insert({
+          token: inv.token, user_id: inv.userId, name: inv.name || null,
+          birth: inv.birth, role: inv.role || null,
+          created_at: inv.createdAt, expires_at: inv.expiresAt || null
+        });
+        if (error) throw error;
+        return inv;
+      },
+      async remove(userId, token) {
+        const { data, error } = await sb.from("invites").delete()
+          .eq("token", token).eq("user_id", userId).select("token");
+        if (error) throw error;
+        return !!(data && data.length);
+      },
+      async addResponse(r) {
+        const { error } = await sb.from("invite_responses").insert({
+          id: r.id, token: r.token, name: r.name || null,
+          total: r.total, max: r.max, band: r.band || null, label: r.label || null,
+          created_at: r.createdAt
+        });
+        if (error) throw error;
+        return r;
+      },
+      async responses(token) {
+        const { data, error } = await sb.from("invite_responses").select("*")
+          .eq("token", token).order("created_at", { ascending: false }).limit(50);
+        if (error) throw error;
+        return (data || []).map(r => ({
+          id: r.id, name: r.name, total: r.total, max: r.max,
+          band: r.band, label: r.label, createdAt: r.created_at
+        }));
+      }
+    },
     people: {
       async forUser(userId) {
         const { data, error } = await sb.from("people").select("*").eq("user_id", userId).order("name");
@@ -170,7 +222,11 @@ function jsonBackend() {
   const USERS = path.join(DATA_DIR, "users.json");
   const PEOPLE = path.join(DATA_DIR, "people.json");
   const CONV = path.join(DATA_DIR, "conversations.json");
-  for (const f of [USERS, PEOPLE, CONV]) if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
+  const INVITES = path.join(DATA_DIR, "invites.json");
+  const INVITE_RES = path.join(DATA_DIR, "invite-responses.json");
+  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES]) {
+    if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
+  }
 
   const read = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } };
   const write = (f, d) => { const t = `${f}.tmp`; fs.writeFileSync(t, JSON.stringify(d, null, 2)); fs.renameSync(t, f); };
@@ -225,6 +281,41 @@ function jsonBackend() {
         u.streak = { current: s.current, longest: s.longest, last: s.last, days: s.days };
         write(USERS, all);
         return true;
+      }
+    },
+    // Mirrors the Supabase backend's invite shape exactly.
+    invites: {
+      async forUser(userId) {
+        return read(INVITES)
+          .filter(i => i.userId === userId)
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
+      },
+      async get(token) {
+        return read(INVITES).find(i => i.token === token);
+      },
+      async add(inv) {
+        const all = read(INVITES);
+        all.push(inv);
+        write(INVITES, all);
+        return inv;
+      },
+      async remove(userId, token) {
+        const all = read(INVITES);
+        const next = all.filter(i => !(i.token === token && i.userId === userId));
+        write(INVITES, next);
+        return next.length !== all.length;
+      },
+      async addResponse(r) {
+        const all = read(INVITE_RES);
+        all.push(r);
+        write(INVITE_RES, all);
+        return r;
+      },
+      async responses(token) {
+        return read(INVITE_RES)
+          .filter(r => r.token === token)
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+          .slice(0, 50);
       }
     },
     people: {
