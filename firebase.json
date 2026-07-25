@@ -1,0 +1,16 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Pythia",
+        "supportEmail": "mivhaan@gmail.com"
+      }
+    }
+  },
+  "firestore": {
+    "database": "default",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
