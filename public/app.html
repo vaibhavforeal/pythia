@@ -134,6 +134,29 @@
           <div class="invite-responses" id="inviteResponses"></div>
         </div>
 
+        <!-- Your constellation: Soul ID, incoming requests, and everyone you're
+             connected to with today's flow. -->
+        <div class="friends-card" id="friendsCard" hidden>
+          <div class="aspects-title">Your constellation <span class="fr-count" id="friendCount"></span></div>
+
+          <div class="soul-row" id="soulRow" hidden>
+            <span class="soul-label">your Soul ID</span>
+            <code class="soul-value" id="soulValue">—</code>
+            <button type="button" id="soulCopy" title="Copy your Soul ID">copy</button>
+          </div>
+          <p class="soul-hint" id="soulHint" hidden>Verify your mobile number to get a Soul ID.</p>
+
+          <div class="fr-requests" id="friendRequests"></div>
+
+          <form class="add-friend" id="addFriendForm">
+            <input type="text" id="addFriendInput" placeholder="their Soul ID…" autocomplete="off" aria-label="Add by Soul ID" />
+            <button type="submit" id="addFriendBtn">add</button>
+          </form>
+          <p class="err" id="friendErr" hidden></p>
+
+          <div class="constellation" id="constellation"></div>
+        </div>
+
         <!-- Nerd mode: reveals the full expert tables in the chat column.
              Hidden until a chart exists, like the ship check below. -->
         <div class="nerd-switch" id="nerdSwitch" hidden>

@@ -632,6 +632,17 @@ app.post("/api/account/birth", async (req, res) => {
 // Privacy: everything below returns names, Soul IDs, signs and scores. Nobody
 // ever receives another person's birth details or full chart.
 
+/**
+ * What a friend should be called. The name they entered with their chart beats
+ * the email local-part, which is what displayName falls back to — "bela" reads
+ * like a username, "Bela" reads like a person.
+ */
+function friendName(u) {
+  const fromBirth = u && u.birth && u.birth.name;
+  const clean = invite.safeName(fromBirth, "");
+  return clean || displayName(u);
+}
+
 /** Chart for a user, or null when they haven't saved birth details yet. */
 async function chartForUser(user) {
   if (!user || !user.birth) return null;
@@ -691,7 +702,7 @@ app.get("/api/friends/requests", async (req, res) => {
         source: r.source,
         createdAt: r.createdAt,
         ...friendsLib.publicFriend(
-          { id: from.id, soulId: from.soulId, name: displayName(from) },
+          { id: from.id, soulId: from.soulId, name: friendName(from) },
           await chartForUser(from)
         )
       });
@@ -796,7 +807,7 @@ app.get("/api/friends", async (req, res) => {
       if (!them) continue;
       const theirChart = await chartForUser(them);
       const base = friendsLib.publicFriend(
-        { id: them.id, soulId: them.soulId, name: displayName(them) },
+        { id: them.id, soulId: them.soulId, name: friendName(them) },
         theirChart
       );
 

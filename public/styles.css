@@ -1500,3 +1500,93 @@ button {
 }
 #ivShare:hover { border-color: var(--sky); transform: translateY(-1px); }
 #ivShare:disabled { opacity: .6; cursor: default; transform: none; }
+
+/* ---------- Constellation (friends) ---------- */
+.friends-card {
+  margin: 0 0 16px; padding: 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.fr-count {
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; background: var(--sky-soft); color: var(--sky-deep);
+}
+/* Your own Soul ID — meant to be read aloud and copied, so give it room. */
+.soul-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.soul-label {
+  flex: 0 0 auto; font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+}
+.soul-value {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: var(--sky-deep); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px;
+}
+#soulCopy {
+  flex: 0 0 auto; padding: 5px 10px; font-size: 10.5px; font-weight: 600;
+  color: var(--sky-deep); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+#soulCopy:hover { border-color: var(--sky); }
+.soul-hint { margin: 6px 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+
+.add-friend { display: flex; gap: 6px; margin: 10px 0 0; }
+.add-friend input {
+  flex: 1 1 auto; min-width: 0; padding: 7px 9px; font-size: 11.5px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+#addFriendBtn {
+  flex: 0 0 auto; padding: 7px 13px; font-size: 11.5px; font-weight: 600;
+  color: #fff; background: var(--sky); border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+#addFriendBtn:hover { filter: brightness(1.07); }
+#addFriendBtn:disabled { opacity: .6; cursor: default; }
+
+.fr-title, .fr-empty {
+  margin: 12px 0 6px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1.1px; text-transform: uppercase; color: var(--muted);
+}
+.fr-empty {
+  text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px;
+  line-height: 1.5; margin: 10px 0 2px;
+}
+
+.fr-req, .fr-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 0; border-bottom: 1px solid var(--line-soft);
+}
+.fr-row:last-child, .fr-req:last-child { border-bottom: none; }
+.fr-glyph { flex: 0 0 auto; width: 20px; text-align: center; font-size: 15px; color: var(--sky); }
+.fr-main { flex: 1 1 auto; min-width: 0; }
+.fr-main b {
+  display: block; font-size: 12.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fr-main small {
+  display: block; font-size: 10px; color: var(--faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fr-req button {
+  flex: 0 0 auto; padding: 5px 10px; font-size: 10.5px; font-weight: 600;
+  color: #fff; background: var(--sky); border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.fr-decline { background: var(--panel) !important; color: var(--muted) !important; border: 1px solid var(--line) !important; }
+.fr-decline:hover { color: var(--err) !important; border-color: var(--err) !important; }
+
+/* Today's flow, from combined Chandra Bala — see server/friends.js. */
+.fr-flow {
+  flex: 0 0 auto; padding: 2px 8px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .3px;
+  background: var(--field); color: var(--muted); cursor: help;
+}
+.fr-flowing { background: rgba(16, 185, 129, .16); color: #059669; }
+.fr-friction { background: rgba(251, 191, 36, .18); color: #b45309; }
+.fr-score {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.fr-menu {
+  flex: 0 0 auto; width: 22px; padding: 2px 0; line-height: 1;
+  font-size: 14px; color: var(--faint); background: none; border: none; cursor: pointer;
+}
+.fr-menu:hover { color: var(--ink); }

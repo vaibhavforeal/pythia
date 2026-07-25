@@ -300,6 +300,205 @@ function setupInvite() {
 }
 setupInvite();
 
+// ---- Friends: Soul ID, requests, constellation ----------------------------
+// Everything here deals in names, Soul IDs, signs and scores. The server never
+// sends another person's birth details, so there's nothing sensitive to guard
+// on this side — see server/friends.js.
+let myAccount = null;
+
+const FLOW_COPY = {
+  flowing: { label: "flowing", hint: "the Moon's good to you both today" },
+  steady: { label: "steady", hint: "an ordinary day between you" },
+  friction: { label: "friction", hint: "the Moon's awkward for one of you" }
+};
+
+async function loadAccount() {
+  try {
+    const res = await fetch("/api/account");
+    if (!res.ok) return null;
+    myAccount = await res.json();
+    renderSoulId();
+    return myAccount;
+  } catch (_) {
+    return null;
+  }
+}
+
+function renderSoulId() {
+  const row = $("soulRow"), hint = $("soulHint"), card = $("friendsCard");
+  if (!row || !card) return;
+  card.hidden = false;
+  const id = myAccount && myAccount.soulId;
+  row.hidden = !id;
+  if (hint) hint.hidden = !!id;
+  if (id) $("soulValue").textContent = id;
+  // Without a Soul ID you can still receive requests, but not be found.
+  const form = $("addFriendForm");
+  if (form) form.hidden = false;
+}
+
+async function loadFriends() {
+  const host = $("constellation");
+  if (!host) return;
+  try {
+    const res = await fetch("/api/friends");
+    if (!res.ok) return;
+    const data = await res.json();
+    const n = (data.friends || []).length;
+    const count = $("friendCount");
+    if (count) count.textContent = n ? String(n) : "";
+
+    if (!n) {
+      host.innerHTML = data.needsBirth
+        ? `<p class="fr-empty">Cast your chart to see how you line up with people.</p>`
+        : `<p class="fr-empty">No one here yet — share your Soul ID or add someone by theirs.</p>`;
+      return;
+    }
+    host.innerHTML = data.friends.map(friendRow).join("");
+  } catch (_) {
+    /* the rest of the sidebar still works */
+  }
+}
+
+function friendRow(f) {
+  const glyph = Number.isInteger(f.moonSignIndex) ? ZODIAC_GLYPH[f.moonSignIndex] : "✦";
+  const flow = f.flow && FLOW_COPY[f.flow.key];
+  const score = f.match ? `${fmtScore(f.match.total)}/${f.match.max}` : "—";
+  return `
+    <div class="fr-row" data-id="${escAttr(f.id)}">
+      <span class="fr-glyph" aria-hidden="true">${glyph}</span>
+      <div class="fr-main">
+        <b>${escAttr(f.name)}</b>
+        <small>${escAttr(f.soulId || "")}</small>
+      </div>
+      ${flow ? `<span class="fr-flow fr-${escAttr(f.flow.key)}" title="${escAttr(flow.hint)}">${flow.label}</span>` : ""}
+      <span class="fr-score">${score}</span>
+      <button type="button" class="fr-menu" data-act="remove" title="Remove or block">⋯</button>
+    </div>`;
+}
+
+async function loadFriendRequests() {
+  const host = $("friendRequests");
+  if (!host) return;
+  try {
+    const res = await fetch("/api/friends/requests");
+    if (!res.ok) return;
+    const { requests } = await res.json();
+    if (!requests || !requests.length) { host.innerHTML = ""; return; }
+    host.innerHTML =
+      `<div class="fr-title">wants to connect</div>` +
+      requests.map(r => `
+        <div class="fr-req" data-pair="${escAttr(r.pairKey)}">
+          <span class="fr-glyph" aria-hidden="true">${Number.isInteger(r.moonSignIndex) ? ZODIAC_GLYPH[r.moonSignIndex] : "✦"}</span>
+          <div class="fr-main">
+            <b>${escAttr(r.name)}</b>
+            <small>${escAttr([r.moonSign, r.risingSign].filter(Boolean).join(" · "))}</small>
+          </div>
+          <button type="button" data-act="accept">accept</button>
+          <button type="button" data-act="decline" class="fr-decline">✕</button>
+        </div>`).join("");
+  } catch (_) {
+    /* non-fatal */
+  }
+}
+
+function showFriendErr(msg) {
+  const el = $("friendErr");
+  if (!el) return;
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+function setupFriends() {
+  const form = $("addFriendForm");
+  if (form) {
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      $("friendErr").hidden = true;
+      const input = $("addFriendInput");
+      const soulId = input.value.trim();
+      if (!soulId) return;
+      const btn = $("addFriendBtn");
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/friends/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ soulId })
+        });
+        if (res.status === 401) return showAuth();
+        const data = await res.json();
+        if (!res.ok) return showFriendErr(data.error || "Couldn't send that request.");
+        input.value = "";
+        toast("request sent ✦");
+      } catch (_) {
+        showFriendErr("Couldn't reach Pythia — try again.");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  const copy = $("soulCopy");
+  if (copy) {
+    copy.addEventListener("click", async () => {
+      const id = myAccount && myAccount.soulId;
+      if (!id) return;
+      try {
+        await navigator.clipboard.writeText(id);
+        toast("Soul ID copied ✦");
+      } catch (_) {
+        /* clipboard blocked — the value is on screen to select */
+      }
+    });
+  }
+
+  // Requests and rows are re-rendered constantly, so delegate from the card.
+  const card = $("friendsCard");
+  if (!card) return;
+  card.addEventListener("click", async e => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act;
+
+    const req = btn.closest(".fr-req");
+    if (req && (act === "accept" || act === "decline")) {
+      const pair = encodeURIComponent(req.dataset.pair);
+      btn.disabled = true;
+      try {
+        await fetch(`/api/friends/requests/${pair}/${act}`, { method: "POST" });
+        await Promise.all([loadFriendRequests(), loadFriends()]);
+        if (act === "accept") toast("connected ✦");
+      } catch (_) {
+        showFriendErr("That didn't go through — try again.");
+      }
+      return;
+    }
+
+    const row = btn.closest(".fr-row");
+    if (row && act === "remove") {
+      const id = row.dataset.id;
+      const name = (row.querySelector("b") || {}).textContent || "them";
+      // Two destructive options behind one control; confirm which.
+      const choice = window.prompt(
+        `Type "remove" to disconnect from ${name}, or "block" to also stop them contacting you.`, "remove");
+      if (!choice) return;
+      const c = choice.trim().toLowerCase();
+      if (c !== "remove" && c !== "block") return;
+      try {
+        await fetch(c === "block" ? `/api/friends/${id}/block` : `/api/friends/${id}`, {
+          method: c === "block" ? "POST" : "DELETE"
+        });
+        await loadFriends();
+        toast(c === "block" ? "blocked" : "removed");
+      } catch (_) {
+        showFriendErr("That didn't go through — try again.");
+      }
+    }
+  });
+}
+setupFriends();
+
 // ---- Whose chart is on screen ---------------------------------------------
 // Your own chart is the profile: stored locally and restored on load, so it
 // never has to be cast again. Anyone else is a transient view — never written
@@ -308,9 +507,24 @@ const MY_BIRTH_KEY = "myBirth";
 let pendingOther = false; // the next submit is a one-off, not you
 let viewingOther = false;
 
-function saveMyBirth(input) {
+// Local cache only — used when echoing back what the server just gave us, so we
+// don't POST it straight home again.
+function cacheMyBirth(input) {
   try { localStorage.setItem(MY_BIRTH_KEY, JSON.stringify(input)); } catch (_) { /* private mode */ }
   syncInviteBox(); // the first cast stores the profile *after* the render runs
+}
+
+function saveMyBirth(input) {
+  cacheMyBirth(input);
+  // Also server-side: friend compatibility needs it there, and it's what makes
+  // the profile follow you to a new device. Fire-and-forget — a failure here
+  // must not block the reading that's already on screen.
+  const role = (document.querySelector('input[name="inviteRole"]:checked') || {}).value;
+  fetch("/api/account/birth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, role: role === "bride" ? "bride" : "groom" })
+  }).catch(() => { /* stays local until the next successful save */ });
 }
 
 // The invite link always encodes your own birth, so the box needs a stored
@@ -345,9 +559,11 @@ function setViewing(label) {
 }
 
 // Restore the profile on load so a returning user lands on their own chart.
-async function restoreMyChart() {
-  const mine = loadMyBirth();
+// The server copy wins: it's the one that followed you to this device.
+async function restoreMyChart(serverBirth) {
+  const mine = serverBirth || loadMyBirth();
   if (!mine) return false;
+  if (serverBirth) cacheMyBirth(serverBirth); // cache, don't POST it back
   lastInput = mine;
   const ok = await castChart(mine, true);
   if (ok) setViewing(null);
@@ -1624,8 +1840,12 @@ function onAuthed(user) {
   loadConversations();
   checkInStreak();
   loadInviteResponses();
+  loadFriendRequests();
   // Your chart sticks: bring it straight back rather than making you cast again.
-  restoreMyChart();
+  // The account carries the server-side copy, which beats this browser's cache.
+  loadAccount().then(acct => {
+    restoreMyChart(acct && acct.birth).then(() => loadFriends());
+  });
 }
 
 // ---- Daily streak ---------------------------------------------------------
