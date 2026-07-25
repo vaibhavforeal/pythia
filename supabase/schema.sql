@@ -71,3 +71,8 @@ create index if not exists idx_conversations_user on public.conversations(user_i
 alter table public.users         enable row level security;
 alter table public.people        enable row level security;
 alter table public.conversations enable row level security;
+
+-- PostgREST (what supabase-js talks to) caches the table schema. After adding a
+-- column it will keep answering "column does not exist" until that cache is
+-- reloaded, so force it. Harmless to run when nothing changed.
+notify pgrst, 'reload schema';

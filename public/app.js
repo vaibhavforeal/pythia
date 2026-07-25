@@ -1661,10 +1661,17 @@ async function checkInStreak() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date: today })
     });
-    if (!res.ok) return; // streak is decoration — never block the app on it
+    // The streak is decoration — a failure must never block the app. But it
+    // must not fail *silently* either, or a broken endpoint is indistinguishable
+    // from a missing feature (e.g. Supabase serving a stale schema cache).
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.warn(`Streak check-in failed (HTTP ${res.status}).`, detail.slice(0, 300));
+      return;
+    }
     renderStreak(await res.json());
-  } catch (_) {
-    /* offline: no streak chip, everything else still works */
+  } catch (err) {
+    console.warn("Streak check-in did not complete:", err && err.message);
   }
 }
 
