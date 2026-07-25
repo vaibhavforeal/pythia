@@ -143,9 +143,15 @@ function renderResult(data) {
     .map(k => `<li><span>${k.name}</span><b>${fmtScore(k.score)}/${fmtScore(k.max)}</b></li>`)
     .join("");
 
+  // doshas is a flag object — { nadi: bool, bhakoot: bool } — not a list, and
+  // the manglik verdict carries `label`. Getting either wrong throws in here
+  // and the guest sees nothing at all, so both are read defensively.
   const flags = [];
-  if (m.manglik && m.manglik.verdict && m.manglik.verdict.note) flags.push(m.manglik.verdict.note);
-  (m.doshas || []).forEach(d => flags.push(typeof d === "string" ? d : d.note || d.name));
+  const mv = (m.manglik && m.manglik.verdict) || null;
+  if (mv && (mv.label || mv.note)) flags.push(mv.label || mv.note);
+  const d = m.doshas || {};
+  if (d.nadi) flags.push("Nadi dosha — you share a nadi, traditionally the heaviest flag in this system.");
+  if (d.bhakoot) flags.push("Bhakoot dosha — your Moon signs sit awkwardly to each other (6/8 or 2/12).");
 
   $("ivResult").innerHTML = `
     <div class="ivr-head">
