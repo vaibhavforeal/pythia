@@ -627,19 +627,6 @@ function jsonBackend() {
   };
 }
 
-// Backend selection, most specific first. Firestore wins when configured,
-// because that's the deliberate choice; Supabase remains for the existing
-// deployment; JSON files keep `npm start` and the test suite working offline.
-const USE_FIRESTORE = String(process.env.USE_FIRESTORE || "").toLowerCase() === "true";
-
-let backend;
-if (USE_FIRESTORE) {
-  const { firestoreBackend } = require("./firestore-store");
-  backend = firestoreBackend();
-} else if (URL && KEY) {
-  backend = supabaseBackend(URL, KEY);
-} else {
-  backend = jsonBackend();
-}
+const backend = URL && KEY ? supabaseBackend(URL, KEY) : jsonBackend();
 
 module.exports = backend;
