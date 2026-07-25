@@ -11,3 +11,7 @@ design-system/
 # Firebase config for the Android build — regenerate with:
 #   npx -y firebase-tools@latest apps:sdkconfig ANDROID <APP_ID>
 google-services.json
+
+# Firebase admin credentials — full project access, never commit
+serviceAccount*.json
+*-firebase-adminsdk-*.json
