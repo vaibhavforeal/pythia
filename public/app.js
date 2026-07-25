@@ -305,6 +305,7 @@ setupInvite();
 // sends another person's birth details, so there's nothing sensitive to guard
 // on this side — see server/friends.js.
 let myAccount = null;
+let lastFriends = []; // cached so the friendships situation card can name real people
 
 const FLOW_COPY = {
   flowing: { label: "flowing", hint: "the Moon's good to you both today" },
@@ -348,12 +349,14 @@ async function loadFriends() {
     const count = $("friendCount");
     if (count) count.textContent = n ? String(n) : "";
 
+    lastFriends = data.friends || [];
     if (!n) {
       host.innerHTML = data.needsBirth
         ? `<p class="fr-empty">Cast your chart to see how you line up with people.</p>`
         : `<p class="fr-empty">No one here yet — share your Soul ID or add someone by theirs.</p>`;
       return;
     }
+    lastFriends = data.friends;
     host.innerHTML = data.friends.map(friendRow).join("");
   } catch (_) {
     /* the rest of the sidebar still works */
@@ -1071,6 +1074,25 @@ function renderHeadsUpCard(c) {
     </div>`;
 }
 
+// ---- Situation cards ------------------------------------------------------
+// The frame lands before they type: each card opens with the structural read
+// (governing house, its ruler, where that ruler sits, what the era wants), and
+// only then offers to go deeper. See domains.js for why that ordering matters.
+function renderSituationCards(c) {
+  return Object.keys(DOMAINS).map(key => {
+    const read = domainRead(c, key);
+    if (!read) return "";
+    return `
+    <div class="vibe-card vc-situation">
+      <div class="vc-emoji">${DOMAINS[key].emoji}</div>
+      <div class="vc-kicker">${escAttr(read.kicker)}</div>
+      <div class="vc-head">${escAttr(read.head)}</div>
+      <div class="vc-line">${escAttr(domainLine(read))}</div>
+      <button type="button" class="vibe-cta" data-cta="domain:${escAttr(key)}">where should my energy go? →</button>
+    </div>`;
+  }).join("");
+}
+
 // Ship-check entry — opens the compatibility form (in the sidebar drawer).
 function renderShipCta() {
   return `
@@ -1128,6 +1150,7 @@ function renderChartCard(c) {
       renderEraCard(c) +
       renderPowerCard(c) +
       renderHeadsUpCard(c) +
+      renderSituationCards(c) +
       renderShipCta();
   }
 
@@ -1366,6 +1389,26 @@ function handleCta(kind) {
   if (!chart) return;
   if (kind === "ship") return openShipCheck();
   if (streaming) return;
+
+  // Situation cards send the same structure the card displayed, so the model
+  // fills the four slots from that spine rather than inventing its own frame.
+  if (kind.startsWith("domain:")) {
+    const read = domainRead(chart, kind.slice(7));
+    if (!read) return;
+    const parts = [read.ask, "", domainContext(read)];
+    // Friendships get the graph: knowing who these people actually are, and how
+    // today sits between you, is the part a general-purpose chatbot can't do.
+    if (read.key === "friendships" && lastFriends.length) {
+      parts.push(
+        "My people, with today's Moon between us and our 36-guna compatibility: " +
+        lastFriends.slice(0, 8).map(f =>
+          `${f.name}${f.flow ? ` (${f.flow.key}` : ""}${f.match ? `, ${f.match.total}/36)` : f.flow ? ")" : ""}`
+        ).join("; ") + "."
+      );
+    }
+    parts.push("", FOUR_SLOTS);
+    return sendMessage(parts.join("\n"));
+  }
   const d = chart.dasha;
   const tm = chart.transits && chart.transits.planets && chart.transits.planets.find(p => p.key === "Moon");
   const prompts = {
