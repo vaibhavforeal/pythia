@@ -155,7 +155,22 @@ create table if not exists public.blocks (
 );
 create unique index if not exists idx_blocks_pair on public.blocks(blocker, blocked);
 
+-- Push device tokens. tz_offset_minutes is the DEVICE's offset, recorded at
+-- registration: a birth timezone says nothing about where someone lives now,
+-- and the daily send has to land in their morning, not ours.
+create table if not exists public.devices (
+  token             text primary key,
+  user_id           text not null,
+  platform          text,
+  tz_offset_minutes integer,
+  last_sent_at      timestamptz,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+create index if not exists idx_devices_user on public.devices(user_id);
+
 alter table public.otps             enable row level security;
+alter table public.devices          enable row level security;
 alter table public.friendships      enable row level security;
 alter table public.friend_requests  enable row level security;
 alter table public.blocks           enable row level security;

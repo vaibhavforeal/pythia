@@ -25,6 +25,12 @@ const fromUserRow = r => (r ? {
   createdAt: r.created_at ?? r.createdAt ?? null
 } : r);
 
+const fromDeviceRow = r => ({
+  token: r.token, userId: r.user_id, platform: r.platform,
+  tzOffsetMinutes: r.tz_offset_minutes, lastSentAt: r.last_sent_at,
+  createdAt: r.created_at
+});
+
 const fromInviteRow = r => ({
   token: r.token, userId: r.user_id, name: r.name, birth: r.birth,
   role: r.role, createdAt: r.created_at, expiresAt: r.expires_at
@@ -133,6 +139,32 @@ function supabaseBackend(url, key) {
             streak_days: s.days
           })
           .eq("id", id);
+        if (error) throw error;
+        return true;
+      }
+    },
+    devices: {
+      async forUser(userId) {
+        const { data, error } = await sb.from("devices").select("*").eq("user_id", userId);
+        if (error) throw error;
+        return (data || []).map(fromDeviceRow);
+      },
+      async all() {
+        const { data, error } = await sb.from("devices").select("*");
+        if (error) throw error;
+        return (data || []).map(fromDeviceRow);
+      },
+      async put(d) {
+        const { error } = await sb.from("devices").upsert({
+          token: d.token, user_id: d.userId, platform: d.platform || null,
+          tz_offset_minutes: d.tzOffsetMinutes, last_sent_at: d.lastSentAt || null,
+          created_at: d.createdAt, updated_at: new Date().toISOString()
+        }, { onConflict: "token" });
+        if (error) throw error;
+        return d;
+      },
+      async remove(token) {
+        const { error } = await sb.from("devices").delete().eq("token", token);
         if (error) throw error;
         return true;
       }
@@ -357,7 +389,8 @@ function jsonBackend() {
   const FRIENDS = path.join(DATA_DIR, "friendships.json");
   const FRIEND_REQ = path.join(DATA_DIR, "friend-requests.json");
   const BLOCKS = path.join(DATA_DIR, "blocks.json");
-  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES, OTPS, FRIENDS, FRIEND_REQ, BLOCKS]) {
+  const DEVICES = path.join(DATA_DIR, "devices.json");
+  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES, OTPS, FRIENDS, FRIEND_REQ, BLOCKS, DEVICES]) {
     if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
   }
 
@@ -419,6 +452,24 @@ function jsonBackend() {
         if (!u) return false;
         u.streak = { current: s.current, longest: s.longest, last: s.last, days: s.days };
         write(USERS, all);
+        return true;
+      }
+    },
+    devices: {
+      async forUser(userId) {
+        return read(DEVICES).filter(d => d.userId === userId);
+      },
+      async all() {
+        return read(DEVICES);
+      },
+      async put(d) {
+        const all = read(DEVICES).filter(x => x.token !== d.token);
+        all.push(d);
+        write(DEVICES, all);
+        return d;
+      },
+      async remove(token) {
+        write(DEVICES, read(DEVICES).filter(d => d.token !== token));
         return true;
       }
     },

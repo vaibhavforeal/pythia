@@ -20,6 +20,8 @@ const otpLib = require("./otp");
 const sms = require("./sms");
 const soulid = require("./soulid");
 const friendsLib = require("./friends");
+const notify = require("./notify");
+const push = require("./push");
 
 // Phone becomes mandatory only once SMS is actually deliverable. Until DLT
 // clears, existing email/Google signup keeps working and phone is opt-in —
@@ -229,7 +231,9 @@ app.use("/api", (req, res, next) => {
 // /api/invite/* is deliberately public: an invite that dead-ends at a signup
 // wall doesn't spread. checkOrigin still applies, and those handlers are
 // individually rate limited and never return the inviter's birth details.
-const PUBLIC_API = /^\/(auth|invite)\//;
+// /api/cron/* has no user, so it can't pass the session gate — it authenticates
+// with a shared secret in its own handler instead.
+const PUBLIC_API = /^\/(auth|invite|cron)\//;
 app.use("/api", auth.checkOrigin, (req, res, next) => {
   if (PUBLIC_API.test(req.path)) return next();
   return auth.requireAuth(req, res, next);
@@ -948,6 +952,137 @@ app.get("/api/friends", async (req, res) => {
   } catch (err) {
     console.error("friends list error:", err);
     res.status(500).json({ error: "Could not load your constellation." });
+  }
+});
+
+// --- Push notifications -------------------------------------------------------
+// Register the device's FCM token, along with the device's own UTC offset: the
+// daily send has to land in the user's morning, and a birth timezone says
+// nothing about where they live now.
+app.post("/api/devices", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const token = String(b.token || "").trim();
+    if (token.length < 20 || token.length > 4096) {
+      return res.status(400).json({ error: "Invalid device token." });
+    }
+    const tz = Number(b.tzOffsetMinutes);
+    const existing = (await store.devices.forUser(req.userId)).find(d => d.token === token);
+    await store.devices.put({
+      token,
+      userId: req.userId,
+      platform: ["android", "ios", "web"].includes(b.platform) ? b.platform : null,
+      tzOffsetMinutes: Number.isFinite(tz) ? Math.max(-840, Math.min(840, Math.round(tz))) : null,
+      lastSentAt: existing ? existing.lastSentAt : null,
+      createdAt: existing ? existing.createdAt : new Date().toISOString()
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("device register error:", err);
+    res.status(500).json({ error: "Could not register this device." });
+  }
+});
+
+app.delete("/api/devices/:token", async (req, res) => {
+  try {
+    const mine = await store.devices.forUser(req.userId);
+    if (!mine.some(d => d.token === req.params.token)) {
+      return res.status(404).json({ error: "Not your device." });
+    }
+    await store.devices.remove(req.params.token);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("device remove error:", err);
+    res.status(500).json({ error: "Could not remove this device." });
+  }
+});
+
+/**
+ * Send the daily line to everyone whose local time is the send hour.
+ * Returns a summary so the scheduler's logs say something useful.
+ */
+async function runDailyPush(atMs = Date.now(), hour = 8) {
+  const devices = await store.devices.all();
+  const out = { considered: devices.length, sent: 0, skipped: 0, dropped: 0, failed: 0 };
+  const chartCache = new Map();
+
+  for (const device of devices) {
+    if (!notify.isSendHour(device, atMs, hour) || notify.alreadySentToday(device, atMs)) {
+      out.skipped++;
+      continue;
+    }
+    try {
+      const user = await users.findById(device.userId);
+      if (!user || !user.birth) { out.skipped++; continue; }
+
+      if (!chartCache.has(user.id)) chartCache.set(user.id, computeChart(parseBirth(user.birth)));
+      const chart = chartCache.get(user.id);
+      const natal = (chart.planets || []).find(p => p.key === "Moon");
+      const transit = chart.transits && (chart.transits.planets || []).find(p => p.key === "Moon");
+
+      // The friend with the most notable day alongside them is the most
+      // interesting thing we can say, so pick one if there is one.
+      let friend = null;
+      try {
+        const rows = await store.friends.listFor(user.id);
+        for (const f of rows.slice(0, 10)) {
+          const other = await users.findById(friendsLib.otherId(f, user.id));
+          if (!other || !other.birth) continue;
+          const theirChart = computeChart(parseBirth(other.birth));
+          const theirMoon = (theirChart.planets || []).find(p => p.key === "Moon");
+          const flow = friendsLib.dailyFlow(
+            natal && natal.signIndex, theirMoon && theirMoon.signIndex, transit && transit.signIndex);
+          if (flow.key !== "steady") { friend = { name: friendName(other), flow: flow.key }; break; }
+        }
+      } catch (_) { /* the line is fine without a friend */ }
+
+      const streakRow = await users.getStreak(user.id);
+      const message = notify.dailyMessage({
+        natalMoonSign: natal && natal.signIndex,
+        transitMoonSign: transit && transit.signIndex,
+        name: friendName(user),
+        streak: streakRow && streakRow.current,
+        friend
+      });
+      if (!message) { out.skipped++; continue; }
+
+      const result = await push.send(device.token, message, { kind: message.kind });
+      if (result.ok) {
+        await store.devices.put({ ...device, lastSentAt: new Date(atMs).toISOString() });
+        out.sent++;
+      } else if (result.stale) {
+        // The app was uninstalled or the token rotated — stop retrying forever.
+        await store.devices.remove(device.token);
+        out.dropped++;
+      } else {
+        out.failed++;
+      }
+    } catch (err) {
+      console.error("daily push error for device:", err.message);
+      out.failed++;
+    }
+  }
+  return out;
+}
+
+// Called by a scheduler (Render Cron, GitHub Actions, cron-job.org) every hour.
+// Guarded by a shared secret rather than a session, since no user is involved.
+app.post("/api/cron/daily-push", async (req, res) => {
+  const secret = (process.env.CRON_SECRET || "").trim();
+  if (!secret) return res.status(503).json({ error: "CRON_SECRET is not set." });
+  const given = String(req.headers["x-cron-secret"] || "");
+  if (given.length !== secret.length ||
+      !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret))) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const hour = Number(process.env.PUSH_HOUR_LOCAL) || 8;
+    const summary = await runDailyPush(Date.now(), hour);
+    console.log("  🔔 daily push:", JSON.stringify(summary));
+    res.json(summary);
+  } catch (err) {
+    console.error("cron daily push error:", err);
+    res.status(500).json({ error: "Daily push failed." });
   }
 });
 
