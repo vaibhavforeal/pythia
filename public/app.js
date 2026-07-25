@@ -310,6 +310,15 @@ let viewingOther = false;
 
 function saveMyBirth(input) {
   try { localStorage.setItem(MY_BIRTH_KEY, JSON.stringify(input)); } catch (_) { /* private mode */ }
+  syncInviteBox(); // the first cast stores the profile *after* the render runs
+}
+
+// The invite link always encodes your own birth, so the box needs a stored
+// profile — not merely a chart on screen. Driven from both the render and
+// saveMyBirth so the two can't disagree about whether a profile exists.
+function syncInviteBox() {
+  const ib = $("inviteBox");
+  if (ib) ib.hidden = !loadMyBirth();
 }
 function loadMyBirth() {
   try {
@@ -919,10 +928,7 @@ function renderChartCard(c) {
   if (cb) cb.checked = nerdOpen;
   const co = $("checkOther");
   if (co) co.hidden = false;
-  // The invite always encodes your own birth, so it needs a stored profile
-  // rather than merely a chart on screen.
-  const ib = $("inviteBox");
-  if (ib) ib.hidden = !loadMyBirth();
+  syncInviteBox();
   const fh = $("profileHead");
   if (fh) fh.hidden = false;
 
