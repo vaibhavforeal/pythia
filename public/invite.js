@@ -157,11 +157,26 @@ function renderResult(data) {
     </div>
     ${kutas ? `<ul class="ivr-kutas">${kutas}</ul>` : ""}
     ${flags.length ? `<div class="ivr-flags">${flags.map(f => `<p>${escAttr(f)}</p>`).join("")}</div>` : ""}
+    <div class="ivr-share">
+      <button type="button" id="ivShare">Share this ✦</button>
+    </div>
     <div class="ivr-cta">
       <p>That's the 36-guna Ashtakoot score — real Vedic math, not a vibe check.</p>
       <a class="invite-cta" href="/app">Get your own full chart ✦</a>
       <small>Your Cosmic ID, today's vibe, the era you're in — free.</small>
     </div>`;
+
+  // Same 9:16 card the app produces — buildMatchStoryImage needs exactly the
+  // match object, and boy/girl survive publicMatch since they're sign-level.
+  const shareBtn = $("ivShare");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", () =>
+      runShare(shareBtn, "Creating…", async () => {
+        const blob = await buildMatchStoryImage(m);
+        await shareOrDownload(blob, "pythia-match.png", "Our Cosmic Match", "our cosmic compatibility ✦ via Pythia");
+      })
+    );
+  }
 
   $("inviteForm").hidden = true;
   $("ivResult").hidden = false;

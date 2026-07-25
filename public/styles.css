@@ -1489,3 +1489,14 @@ button {
   .ivr-score { font-size: 38px; }
   .ivr-kutas { grid-template-columns: 1fr; }
 }
+
+/* Share button on the invite result. */
+.ivr-share { margin-top: 18px; text-align: center; }
+#ivShare {
+  padding: 10px 20px; border-radius: 999px;
+  font: 600 13px var(--font); letter-spacing: .3px; color: var(--sky-deep);
+  background: var(--panel); border: 1px solid var(--line); cursor: pointer;
+  transition: border-color .15s, transform .15s;
+}
+#ivShare:hover { border-color: var(--sky); transform: translateY(-1px); }
+#ivShare:disabled { opacity: .6; cursor: default; transform: none; }
