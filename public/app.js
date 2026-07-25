@@ -392,7 +392,10 @@ async function loadFriendRequests() {
           <span class="fr-glyph" aria-hidden="true">${Number.isInteger(r.moonSignIndex) ? ZODIAC_GLYPH[r.moonSignIndex] : "✦"}</span>
           <div class="fr-main">
             <b>${escAttr(r.name)}</b>
-            <small>${escAttr([r.moonSign, r.risingSign].filter(Boolean).join(" · "))}</small>
+            <small>${escAttr(
+              [r.source === "invite" ? "from your invite link" : null, r.moonSign, r.risingSign]
+                .filter(Boolean).join(" · ")
+            )}</small>
           </div>
           <button type="button" data-act="accept">accept</button>
           <button type="button" data-act="decline" class="fr-decline">✕</button>

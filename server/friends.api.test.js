@@ -42,6 +42,20 @@ async function api(method, url, body) {
   return { status: res.status, json };
 }
 const hash = s => [...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0);
+
+/**
+ * Scan a payload for leaked birth values. Opaque ids are stripped first: they
+ * are random hex, so "1997" or "19" turns up in one by chance and would fail
+ * this check for no reason. What we're actually asserting is that no birth
+ * field survives into a friend-facing response.
+ */
+function assertNoBirthData(payload, values) {
+  const scrubbed = JSON.stringify(payload, (k, v) =>
+    (k === "id" || k === "pairKey" || k === "since" || k === "createdAt") ? undefined : v);
+  for (const v of values) {
+    assert.ok(!scrubbed.includes(v), `leaked ${v}: ${scrubbed.slice(0, 300)}`);
+  }
+}
 const as = who => { current = who; };
 
 /** Register, save birth details, return the Soul ID. */
@@ -128,10 +142,7 @@ test("a request arrives, showing signs but no birth data", async () => {
   assert.ok(req.moonSign, "signs are the point of the card");
   assert.strictEqual(req.soulId, ashaSoul);
 
-  const blob = JSON.stringify(r.json);
-  for (const secret of ["1995", "28.6139", "77.209", "birth", "planets"]) {
-    assert.ok(!blob.includes(secret), `leaked ${secret} in a friend request`);
-  }
+  assertNoBirthData(r.json, ["1995", "28.6139", "77.209", "birth", "planets"]);
 });
 
 test("duplicate requests are refused, in both directions", async () => {
@@ -166,10 +177,7 @@ test("the constellation shows today's flow and a real compatibility score", asyn
   assert.strictEqual(f.match.max, 36);
   assert.ok(f.match.band);
 
-  const blob = JSON.stringify(r.json);
-  for (const secret of ["1997", "19.076", "72.8777", "degInSignFmt", "julianDay"]) {
-    assert.ok(!blob.includes(secret), `leaked ${secret} into the constellation`);
-  }
+  assertNoBirthData(r.json, ["1997", "19.076", "72.8777", "degInSignFmt", "julianDay"]);
 });
 
 test("the friendship is mutual without a second accept", async () => {

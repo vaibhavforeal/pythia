@@ -276,7 +276,8 @@ app.post("/api/auth/phone/register", auth.rateLimit, async (req, res) => {
     });
     const soulId = await ensureSoulId(user);
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.json({ user: { ...publicUser(user), soulId, phone: phoneLib.mask(p) } });
+    const connected = await linkPendingInvite(req, res, user.id);
+    res.json({ user: { ...publicUser(user), soulId, phone: phoneLib.mask(p) }, connectedTo: connected ? true : undefined });
   } catch (err) {
     console.error("phone register error:", err);
     res.status(500).json({ error: "Registration failed." });
@@ -359,7 +360,8 @@ app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
     const { salt, hash } = await auth.hashPassword(password);
     const user = await users.add({ id: crypto.randomUUID(), email: e, salt, hash, createdAt: new Date().toISOString() });
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.json({ user: publicUser(user) });
+    const connected = await linkPendingInvite(req, res, user.id);
+    res.json({ user: publicUser(user), connectedTo: connected ? true : undefined });
   } catch (err) {
     console.error("register error:", err);
     res.status(500).json({ error: "Registration failed." });
@@ -424,6 +426,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
       }
     }
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
+    await linkPendingInvite(req, res, user.id);
     res.redirect("/app");
   } catch (err) {
     console.error("google oauth error:", err);
@@ -599,6 +602,10 @@ app.post("/api/invite/:token/match", inviteMatchLimit, async (req, res) => {
       console.error("invite response log failed:", e); // never fail the check over logging
     }
 
+    // Remember where they came from, so signing up connects them rather than
+    // dropping them into an empty app (see linkPendingInvite).
+    auth.setCookie(res, PENDING_INVITE_COOKIE, token, PENDING_INVITE_TTL_SEC);
+
     res.json({
       inviter: invite.publicInviter(inv, inviterChart),
       match: invite.publicMatch(result)
@@ -609,6 +616,56 @@ app.post("/api/invite/:token/match", inviteMatchLimit, async (req, res) => {
     res.status(500).json({ error: "Compatibility check failed." });
   }
 });
+
+// --- Invite → friend ----------------------------------------------------------
+// Someone opens your link, checks compatibility, then signs up. That signup
+// should land as a connection rather than dropping them into an empty app with
+// no memory of where they came from.
+//
+// The token is remembered in a cookie across the hop from /i/<token> to /app.
+// It's not signed, and doesn't need to be: the token is a capability the holder
+// already had, so setting it by hand achieves nothing that opening the link
+// wouldn't. SameSite=Lax so it survives the top-level navigation.
+const PENDING_INVITE_COOKIE = "pending_invite";
+const PENDING_INVITE_TTL_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * Turn a remembered invite into a friend request from the new account to the
+ * inviter. A request rather than an automatic friendship: a link can be posted
+ * somewhere public, so the inviter still gets to decide.
+ *
+ * Never throws — a failure here must not break a signup that already succeeded.
+ */
+async function linkPendingInvite(req, res, newUserId) {
+  try {
+    const token = auth.parseCookies(req)[PENDING_INVITE_COOKIE];
+    if (!token || !invite.isValidToken(token)) return null;
+    auth.clearCookie(res, PENDING_INVITE_COOKIE); // one shot, whatever happens
+
+    const inv = await invites.get(token);
+    if (!inv || invite.isExpired(inv)) return null;
+    if (inv.userId === newUserId) return null; // opened your own link
+
+    const key = friendsLib.pairKey(newUserId, inv.userId);
+    const reason = friendsLib.requestBlockedReason({
+      me: newUserId,
+      them: inv.userId,
+      existingFriendship: await store.friends.get(key),
+      existingRequest: await store.friends.getRequest(key),
+      blocks: await store.friends.blocksFor(newUserId)
+    });
+    if (reason) return null;
+
+    await store.friends.addRequest({
+      id: crypto.randomUUID(), pairKey: key, from: newUserId, to: inv.userId,
+      source: "invite", createdAt: new Date().toISOString()
+    });
+    return inv.userId;
+  } catch (err) {
+    console.error("invite link error:", err);
+    return null;
+  }
+}
 
 // --- Your own birth details --------------------------------------------------
 // Held server-side so friend compatibility and the daily flow can be computed

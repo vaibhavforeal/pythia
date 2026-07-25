@@ -163,7 +163,8 @@ function renderResult(data) {
     <div class="ivr-cta">
       <p>That's the 36-guna Ashtakoot score — real Vedic math, not a vibe check.</p>
       <a class="invite-cta" href="/app">Get your own full chart ✦</a>
-      <small>Your Cosmic ID, today's vibe, the era you're in — free.</small>
+      <small>Your Cosmic ID, today's vibe, the era you're in — free.<br />
+        Sign up and we'll send ${escAttr(inviterName)} a request to connect.</small>
     </div>`;
 
   // Same 9:16 card the app produces — buildMatchStoryImage needs exactly the
