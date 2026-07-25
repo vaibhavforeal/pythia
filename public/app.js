@@ -1177,6 +1177,11 @@ function renderChartCard(c) {
   // The form has done its job; the profile owns the top of the sidebar now.
   setFormOpen(false);
 
+  // Only now ask about notifications: they've seen a reading, so there's a
+  // reason to want the daily line. Asking on launch is how you lose the
+  // permission permanently on Android 13+.
+  if (window.PythiaPush) window.PythiaPush.init();
+
   // Once the reading is up, the welcome placeholder is redundant.
   const w = $("welcome");
   if (w) w.remove();
@@ -2010,6 +2015,7 @@ authForm.addEventListener("submit", async e => {
 });
 
 $("logoutBtn").addEventListener("click", async () => {
+  if (window.PythiaPush) await window.PythiaPush.unregister();
   try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
   // Native builds hold the session in a token, not a cookie the server can clear.
   if (window.PythiaAuth) window.PythiaAuth.clear();
