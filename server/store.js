@@ -12,7 +12,18 @@ const fs = require("fs");
 const URL = (process.env.SUPABASE_URL || "").trim();
 const KEY = (process.env.SUPABASE_SERVICE_KEY || "").trim();
 
-// Postgres columns are snake_case; the rest of the app speaks camelCase.
+// Postgres columns are snake_case; the rest of the app speaks camelCase. Extra
+// keys are added rather than renamed, so code reading user.email/.hash/.salt is
+// untouched while user.soulId/.phoneVerified work on both backends.
+const fromUserRow = r => (r ? {
+  ...r,
+  googleId: r.google_id ?? r.googleId ?? null,
+  phoneVerified: r.phone_verified ?? r.phoneVerified ?? false,
+  soulId: r.soul_id ?? r.soulId ?? null,
+  soulIdAt: r.soul_id_at ?? r.soulIdAt ?? null,
+  createdAt: r.created_at ?? r.createdAt ?? null
+} : r);
+
 const fromInviteRow = r => ({
   token: r.token, userId: r.user_id, name: r.name, birth: r.birth,
   role: r.role, createdAt: r.created_at, expiresAt: r.expires_at
@@ -39,27 +50,39 @@ function supabaseBackend(url, key) {
       async findByUsername(u) {
         const { data, error } = await sb.from("users").select("*").eq("username", String(u)).maybeSingle();
         if (error) throw error;
-        return data || undefined;
+        return fromUserRow(data) || undefined;
       },
       async findByEmail(e) {
         const { data, error } = await sb.from("users").select("*").eq("email", String(e)).maybeSingle();
         if (error) throw error;
-        return data || undefined;
+        return fromUserRow(data) || undefined;
       },
       async findByGoogleId(gid) {
         const { data, error } = await sb.from("users").select("*").eq("google_id", String(gid)).maybeSingle();
         if (error) throw error;
-        return data || undefined;
+        return fromUserRow(data) || undefined;
       },
       async findById(id) {
         const { data, error } = await sb.from("users").select("*").eq("id", id).maybeSingle();
         if (error) throw error;
-        return data || undefined;
+        return fromUserRow(data) || undefined;
+      },
+      async findByPhone(p) {
+        const { data, error } = await sb.from("users").select("*").eq("phone", String(p)).maybeSingle();
+        if (error) throw error;
+        return fromUserRow(data) || undefined;
+      },
+      async findBySoulId(sid) {
+        const { data, error } = await sb.from("users").select("*").eq("soul_id", String(sid)).maybeSingle();
+        if (error) throw error;
+        return fromUserRow(data) || undefined;
       },
       async add(user) {
         const { error } = await sb.from("users").insert({
           id: user.id, username: user.username || null, email: user.email || null,
           google_id: user.googleId || null, salt: user.salt || null, hash: user.hash || null,
+          phone: user.phone || null, phone_verified: !!user.phoneVerified,
+          soul_id: user.soulId || null, soul_id_at: user.soulIdAt || null,
           created_at: user.createdAt
         });
         if (error) throw error;
@@ -71,6 +94,10 @@ function supabaseBackend(url, key) {
         if (patch.email !== undefined) upd.email = patch.email;
         if (patch.salt !== undefined) upd.salt = patch.salt;
         if (patch.hash !== undefined) upd.hash = patch.hash;
+        if (patch.phone !== undefined) upd.phone = patch.phone;
+        if (patch.phoneVerified !== undefined) upd.phone_verified = patch.phoneVerified;
+        if (patch.soulId !== undefined) upd.soul_id = patch.soulId;
+        if (patch.soulIdAt !== undefined) upd.soul_id_at = patch.soulIdAt;
         const { error } = await sb.from("users").update(upd).eq("id", id);
         if (error) throw error;
         return true;
@@ -102,6 +129,104 @@ function supabaseBackend(url, key) {
             streak_days: s.days
           })
           .eq("id", id);
+        if (error) throw error;
+        return true;
+      }
+    },
+    // One pending OTP per number; a consumed code is deleted rather than
+    // flagged, so a replay has nothing left to match against.
+    otps: {
+      async get(phone) {
+        const { data, error } = await sb.from("otps").select("*").eq("phone", phone).maybeSingle();
+        if (error) throw error;
+        return data ? {
+          phone: data.phone, hash: data.hash, attempts: data.attempts, sends: data.sends,
+          createdAt: data.created_at, lastSentAt: data.last_sent_at, expiresAt: data.expires_at
+        } : undefined;
+      },
+      async put(rec) {
+        const { error } = await sb.from("otps").upsert({
+          phone: rec.phone, hash: rec.hash, attempts: rec.attempts, sends: rec.sends,
+          created_at: rec.createdAt, last_sent_at: rec.lastSentAt, expires_at: rec.expiresAt
+        }, { onConflict: "phone" });
+        if (error) throw error;
+        return rec;
+      },
+      async remove(phone) {
+        const { error } = await sb.from("otps").delete().eq("phone", phone);
+        if (error) throw error;
+        return true;
+      }
+    },
+    friends: {
+      async listFor(userId) {
+        const { data, error } = await sb.from("friendships").select("*")
+          .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+        if (error) throw error;
+        return (data || []).map(r => ({
+          pairKey: r.pair_key, userA: r.user_a, userB: r.user_b, createdAt: r.created_at
+        }));
+      },
+      async get(pairKey) {
+        const { data, error } = await sb.from("friendships").select("*").eq("pair_key", pairKey).maybeSingle();
+        if (error) throw error;
+        return data ? { pairKey: data.pair_key, userA: data.user_a, userB: data.user_b, createdAt: data.created_at } : undefined;
+      },
+      async add(f) {
+        const { error } = await sb.from("friendships").insert({
+          pair_key: f.pairKey, user_a: f.userA, user_b: f.userB, created_at: f.createdAt
+        });
+        if (error) throw error;
+        return f;
+      },
+      async remove(pairKey) {
+        const { error } = await sb.from("friendships").delete().eq("pair_key", pairKey);
+        if (error) throw error;
+        return true;
+      },
+      async getRequest(pairKey) {
+        const { data, error } = await sb.from("friend_requests").select("*").eq("pair_key", pairKey).maybeSingle();
+        if (error) throw error;
+        return data ? { id: data.id, pairKey: data.pair_key, from: data.from_user, to: data.to_user, source: data.source, createdAt: data.created_at } : undefined;
+      },
+      async addRequest(r) {
+        const { error } = await sb.from("friend_requests").insert({
+          id: r.id, pair_key: r.pairKey, from_user: r.from, to_user: r.to,
+          source: r.source || null, created_at: r.createdAt
+        });
+        if (error) throw error;
+        return r;
+      },
+      async removeRequest(pairKey) {
+        const { error } = await sb.from("friend_requests").delete().eq("pair_key", pairKey);
+        if (error) throw error;
+        return true;
+      },
+      async requestsTo(userId) {
+        const { data, error } = await sb.from("friend_requests").select("*")
+          .eq("to_user", userId).order("created_at", { ascending: false }).limit(50);
+        if (error) throw error;
+        return (data || []).map(r => ({
+          id: r.id, pairKey: r.pair_key, from: r.from_user, to: r.to_user,
+          source: r.source, createdAt: r.created_at
+        }));
+      },
+      async blocksFor(userId) {
+        const { data, error } = await sb.from("blocks").select("*")
+          .or(`blocker.eq.${userId},blocked.eq.${userId}`);
+        if (error) throw error;
+        return (data || []).map(r => ({ id: r.id, blocker: r.blocker, blocked: r.blocked, createdAt: r.created_at }));
+      },
+      async addBlock(b) {
+        const { error } = await sb.from("blocks").upsert(
+          { id: b.id, blocker: b.blocker, blocked: b.blocked, created_at: b.createdAt },
+          { onConflict: "blocker,blocked" }
+        );
+        if (error) throw error;
+        return b;
+      },
+      async removeBlock(blocker, blocked) {
+        const { error } = await sb.from("blocks").delete().eq("blocker", blocker).eq("blocked", blocked);
         if (error) throw error;
         return true;
       }
@@ -224,7 +349,11 @@ function jsonBackend() {
   const CONV = path.join(DATA_DIR, "conversations.json");
   const INVITES = path.join(DATA_DIR, "invites.json");
   const INVITE_RES = path.join(DATA_DIR, "invite-responses.json");
-  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES]) {
+  const OTPS = path.join(DATA_DIR, "otps.json");
+  const FRIENDS = path.join(DATA_DIR, "friendships.json");
+  const FRIEND_REQ = path.join(DATA_DIR, "friend-requests.json");
+  const BLOCKS = path.join(DATA_DIR, "blocks.json");
+  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES, OTPS, FRIENDS, FRIEND_REQ, BLOCKS]) {
     if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
   }
 
@@ -247,6 +376,12 @@ function jsonBackend() {
       },
       async findById(id) {
         return read(USERS).find(x => x.id === id);
+      },
+      async findByPhone(p) {
+        return read(USERS).find(x => x.phone === String(p));
+      },
+      async findBySoulId(sid) {
+        return read(USERS).find(x => x.soulId === String(sid));
       },
       async add(user) {
         const all = read(USERS);
@@ -280,6 +415,71 @@ function jsonBackend() {
         if (!u) return false;
         u.streak = { current: s.current, longest: s.longest, last: s.last, days: s.days };
         write(USERS, all);
+        return true;
+      }
+    },
+    // Mirror of the Supabase otps/friends APIs above.
+    otps: {
+      async get(phone) {
+        return read(OTPS).find(o => o.phone === phone);
+      },
+      async put(rec) {
+        const all = read(OTPS).filter(o => o.phone !== rec.phone);
+        all.push(rec);
+        write(OTPS, all);
+        return rec;
+      },
+      async remove(phone) {
+        write(OTPS, read(OTPS).filter(o => o.phone !== phone));
+        return true;
+      }
+    },
+    friends: {
+      async listFor(userId) {
+        return read(FRIENDS).filter(f => f.userA === userId || f.userB === userId);
+      },
+      async get(pairKey) {
+        return read(FRIENDS).find(f => f.pairKey === pairKey);
+      },
+      async add(f) {
+        const all = read(FRIENDS).filter(x => x.pairKey !== f.pairKey);
+        all.push(f);
+        write(FRIENDS, all);
+        return f;
+      },
+      async remove(pairKey) {
+        write(FRIENDS, read(FRIENDS).filter(f => f.pairKey !== pairKey));
+        return true;
+      },
+      async getRequest(pairKey) {
+        return read(FRIEND_REQ).find(r => r.pairKey === pairKey);
+      },
+      async addRequest(r) {
+        const all = read(FRIEND_REQ).filter(x => x.pairKey !== r.pairKey);
+        all.push(r);
+        write(FRIEND_REQ, all);
+        return r;
+      },
+      async removeRequest(pairKey) {
+        write(FRIEND_REQ, read(FRIEND_REQ).filter(r => r.pairKey !== pairKey));
+        return true;
+      },
+      async requestsTo(userId) {
+        return read(FRIEND_REQ)
+          .filter(r => r.to === userId)
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      },
+      async blocksFor(userId) {
+        return read(BLOCKS).filter(b => b.blocker === userId || b.blocked === userId);
+      },
+      async addBlock(b) {
+        const all = read(BLOCKS).filter(x => !(x.blocker === b.blocker && x.blocked === b.blocked));
+        all.push(b);
+        write(BLOCKS, all);
+        return b;
+      },
+      async removeBlock(blocker, blocked) {
+        write(BLOCKS, read(BLOCKS).filter(b => !(b.blocker === blocker && b.blocked === blocked)));
         return true;
       }
     },

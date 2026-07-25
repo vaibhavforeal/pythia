@@ -14,6 +14,31 @@ const auth = require("./auth");
 const oauth = require("./oauth");
 const streak = require("./streak");
 const invite = require("./invite");
+const phoneLib = require("./phone");
+const otpLib = require("./otp");
+const sms = require("./sms");
+const soulid = require("./soulid");
+const friendsLib = require("./friends");
+
+// Phone becomes mandatory only once SMS is actually deliverable. Until DLT
+// clears, existing email/Google signup keeps working and phone is opt-in —
+// otherwise deploying this would break signup for everyone for several days.
+const REQUIRE_PHONE = String(process.env.REQUIRE_PHONE || "").toLowerCase() === "true";
+
+/**
+ * Assign a Soul ID, retrying on the (rare) collision. Frozen once set: an
+ * identifier someone has already shared must not change under them.
+ */
+async function ensureSoulId(user) {
+  if (user.soulId) return user.soulId;
+  for (let i = 0; i < 8; i++) {
+    const candidate = soulid.generate();
+    if (await users.findBySoulId(candidate)) continue;
+    await users.update(user.id, { soulId: candidate, soulIdAt: new Date().toISOString() });
+    return candidate;
+  }
+  throw new Error("Could not allocate a Soul ID");
+}
 const store = require("./store");
 const { users, people, conversations, invites } = store;
 
@@ -123,7 +148,150 @@ app.use("/api", auth.checkOrigin, (req, res, next) => {
 });
 
 // Which login methods the UI should offer (Google appears only when configured).
-app.get("/api/auth/providers", (_req, res) => res.json({ google: oauth.enabled }));
+app.get("/api/auth/providers", (_req, res) =>
+  res.json({ google: oauth.enabled, phone: sms.enabled(), requirePhone: REQUIRE_PHONE }));
+
+// --- Phone verification ------------------------------------------------------
+// Public: used both by signup (no session yet) and by an existing account
+// attaching a number. Rate limited by IP on top of the per-number caps in
+// otp.js, since anonymous callers can hit this.
+app.post("/api/auth/otp/request", auth.rateLimit, async (req, res) => {
+  try {
+    if (!sms.enabled()) return res.status(503).json({ error: "Phone sign-in isn't switched on yet." });
+
+    const p = phoneLib.normalize((req.body || {}).phone);
+    if (!phoneLib.isValid(p)) return res.status(400).json({ error: "Enter a valid mobile number." });
+    if (!phoneLib.isPlausibleIndianMobile(p)) {
+      return res.status(400).json({ error: "That doesn't look like a mobile number." });
+    }
+
+    const existing = await store.otps.get(p);
+    const blocked = otpLib.sendBlockedReason(existing);
+    if (blocked) {
+      res.setHeader("Retry-After", String(blocked.retryAfter));
+      return res.status(429).json({ error: otpLib.REASON_MESSAGE[blocked.reason], retryAfter: blocked.retryAfter });
+    }
+
+    const code = otpLib.generateCode();
+    // Send first: a failed send must not burn the caller's daily quota.
+    await sms.sendOtp(p, code);
+    await store.otps.put(existing ? otpLib.resendRecord(existing, p, code) : otpLib.newRecord(p, code));
+
+    res.json({ sent: true, to: phoneLib.mask(p), expiresInSec: Math.round(otpLib.TTL_MS / 1000) });
+  } catch (err) {
+    console.error("otp request error:", err);
+    res.status(500).json({ error: "Could not send the code." });
+  }
+});
+
+/**
+ * Shared by signup and attach: validates the code and consumes it.
+ * Returns the normalised phone, or null after already sending a response.
+ */
+async function consumeOtp(req, res) {
+  const p = phoneLib.normalize((req.body || {}).phone);
+  if (!phoneLib.isValid(p)) {
+    res.status(400).json({ error: "Enter a valid mobile number." });
+    return null;
+  }
+  const rec = await store.otps.get(p);
+  const result = otpLib.verify(rec, p, (req.body || {}).code);
+  if (!result.ok) {
+    if (result.record) await store.otps.put(result.record); // persist the burnt attempt
+    res.status(400).json({
+      error: otpLib.REASON_MESSAGE[result.reason] || "That code isn't right.",
+      attemptsLeft: result.attemptsLeft
+    });
+    return null;
+  }
+  await store.otps.remove(p); // consumed codes are deleted, never replayable
+  return p;
+}
+
+// Create an account from a verified number.
+app.post("/api/auth/phone/register", auth.rateLimit, async (req, res) => {
+  try {
+    if (!sms.enabled()) return res.status(503).json({ error: "Phone sign-in isn't switched on yet." });
+    const password = String((req.body || {}).password || "");
+    if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+
+    const p = await consumeOtp(req, res);
+    if (!p) return;
+
+    const existing = await users.findByPhone(p);
+    if (existing) return res.status(409).json({ error: "That number already has an account — log in instead." });
+
+    const { salt, hash } = await auth.hashPassword(password);
+    const user = await users.add({
+      id: crypto.randomUUID(), phone: p, phoneVerified: true, salt, hash,
+      createdAt: new Date().toISOString()
+    });
+    const soulId = await ensureSoulId(user);
+    auth.setSessionCookie(res, auth.makeSessionToken(user.id));
+    res.json({ user: { ...publicUser(user), soulId, phone: phoneLib.mask(p) } });
+  } catch (err) {
+    console.error("phone register error:", err);
+    res.status(500).json({ error: "Registration failed." });
+  }
+});
+
+// Attach a verified number to the signed-in account (the migration path for
+// existing email/Google users), and mint their Soul ID.
+app.post("/api/account/phone", async (req, res) => {
+  try {
+    if (!sms.enabled()) return res.status(503).json({ error: "Phone sign-in isn't switched on yet." });
+    const p = await consumeOtp(req, res);
+    if (!p) return;
+
+    const owner = await users.findByPhone(p);
+    if (owner && owner.id !== req.userId) {
+      return res.status(409).json({ error: "That number is already on another account." });
+    }
+    await users.update(req.userId, { phone: p, phoneVerified: true });
+    const user = await users.findById(req.userId);
+    const soulId = await ensureSoulId(user);
+    res.json({ phone: phoneLib.mask(p), soulId });
+  } catch (err) {
+    console.error("attach phone error:", err);
+    res.status(500).json({ error: "Could not save your number." });
+  }
+});
+
+// Attach an email to a phone-first account (recovery, receipts).
+app.post("/api/account/email", async (req, res) => {
+  try {
+    const e = normalizeEmail((req.body || {}).email);
+    if (!isValidEmail(e)) return res.status(400).json({ error: "Enter a valid email address." });
+    const owner = await users.findByEmail(e);
+    if (owner && owner.id !== req.userId) {
+      return res.status(409).json({ error: "That email is already on another account." });
+    }
+    await users.update(req.userId, { email: e });
+    res.json({ email: e });
+  } catch (err) {
+    console.error("attach email error:", err);
+    res.status(500).json({ error: "Could not save your email." });
+  }
+});
+
+// Who am I, including the identity bits the UI needs to nudge migration.
+app.get("/api/account", async (req, res) => {
+  try {
+    const u = await users.findById(req.userId);
+    if (!u) return res.status(404).json({ error: "No such user." });
+    res.json({
+      user: publicUser(u),
+      soulId: u.soulId || null,
+      phone: u.phone ? phoneLib.mask(u.phone) : null,
+      phoneVerified: !!u.phoneVerified,
+      email: u.email || null,
+      needsPhone: REQUIRE_PHONE && !u.phoneVerified
+    });
+  } catch (err) {
+    console.error("account error:", err);
+    res.status(500).json({ error: "Could not load your account." });
+  }
+});
 
 // New accounts register with an email address (usernames are legacy — existing
 // username accounts still log in below).
@@ -150,10 +318,14 @@ app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
 app.post("/api/auth/login", auth.rateLimit, async (req, res) => {
   try {
     const b = req.body || {};
-    const id = String(b.identifier || b.email || b.username || "").trim();
+    const id = String(b.identifier || b.phone || b.email || b.username || "").trim();
+    // Phone is the primary credential now; email and legacy usernames still work.
+    // Tried in order of specificity so "9876543210" resolves as a number rather
+    // than as a username that happens to be digits.
+    const asPhone = phoneLib.normalize(id);
     const user = id.includes("@")
       ? await users.findByEmail(normalizeEmail(id))
-      : await users.findByUsername(id);
+      : (asPhone && (await users.findByPhone(asPhone))) || (await users.findByUsername(id));
     // user.hash is null for Google-only accounts → password login is refused.
     const ok = user && user.hash && (await auth.verifyPassword(String(b.password || ""), user.salt, user.hash));
     if (!ok) return res.status(401).json({ error: "Invalid login or password." });

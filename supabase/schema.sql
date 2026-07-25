@@ -30,6 +30,29 @@ alter table public.users alter column username drop not null;
 alter table public.users alter column salt     drop not null;
 alter table public.users alter column hash     drop not null;
 
+-- Phone becomes the identity anchor; email is an optional add-on. Stored E.164
+-- so one human can't become several accounts by typing their number three ways.
+-- soul_id is the shareable handle (ember-comet-472) — assigned once and frozen,
+-- so correcting a birth time never changes an identifier already shared.
+alter table public.users add column if not exists phone          text;
+alter table public.users add column if not exists phone_verified boolean not null default false;
+alter table public.users add column if not exists soul_id        text;
+alter table public.users add column if not exists soul_id_at     timestamptz;
+create unique index if not exists idx_users_phone   on public.users(phone)   where phone   is not null;
+create unique index if not exists idx_users_soul_id on public.users(soul_id) where soul_id is not null;
+
+-- Pending OTPs, one row per number. The code itself is never stored — only an
+-- HMAC of it, bound to the number — so a database read yields no working codes.
+create table if not exists public.otps (
+  phone       text primary key,
+  hash        text not null,
+  attempts    integer not null default 0,
+  sends       integer not null default 1,
+  created_at  timestamptz not null default now(),
+  last_sent_at timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+
 -- Daily check-in streak. streak_last is the user's OWN local date (text, not a
 -- date column) because "today" has to mean today where they are, not in UTC.
 alter table public.users add column if not exists streak_current integer not null default 0;
@@ -96,6 +119,39 @@ create table if not exists public.invite_responses (
 );
 create index if not exists idx_invite_responses_token on public.invite_responses(token, created_at desc);
 
+-- Friendships. Stored once with the pair ordered (user_a < user_b) so "a
+-- befriends b" and "b befriends a" can't become two rows that disagree.
+create table if not exists public.friendships (
+  pair_key   text primary key,
+  user_a     text not null,
+  user_b     text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_friendships_a on public.friendships(user_a);
+create index if not exists idx_friendships_b on public.friendships(user_b);
+
+create table if not exists public.friend_requests (
+  id          text primary key,
+  pair_key    text not null unique,   -- one live request per pair, either direction
+  from_user   text not null,
+  to_user     text not null,
+  source      text,                   -- 'soul-id' | 'invite'
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_friend_requests_to on public.friend_requests(to_user, created_at desc);
+
+create table if not exists public.blocks (
+  id         text primary key,
+  blocker    text not null,
+  blocked    text not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_blocks_pair on public.blocks(blocker, blocked);
+
+alter table public.otps             enable row level security;
+alter table public.friendships      enable row level security;
+alter table public.friend_requests  enable row level security;
+alter table public.blocks           enable row level security;
 alter table public.users            enable row level security;
 alter table public.people           enable row level security;
 alter table public.conversations    enable row level security;
