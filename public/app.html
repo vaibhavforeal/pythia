@@ -29,7 +29,9 @@
       <header id="mobileBar" class="mobile-bar" hidden>
         <img class="brand-mark" src="logo.png" alt="Pythia" />
         <h1>Pythia</h1>
-        <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode" style="margin-left:auto"></button>
+        <!-- Streak also lives here: the sidebar copy is behind ☰ on mobile. -->
+        <span class="streak" id="streakChipMobile" hidden><span aria-hidden="true">🔥</span><b class="streak-n">0</b></span>
+        <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode"></button>
       </header>
       <!-- ===== Left panel: birth details + chart ===== -->
       <aside class="panel" id="panel">
@@ -46,6 +48,7 @@
         <div class="panel-scroll">
         <div class="account" id="account" hidden>
           <span class="account-user">Signed in as <b id="accountName"></b></span>
+          <span class="streak" id="streakChip" hidden><span aria-hidden="true">🔥</span><b class="streak-n">0</b></span>
           <button type="button" id="logoutBtn" class="logout">Log out</button>
         </div>
 
@@ -93,6 +96,19 @@
           <button type="submit" id="computeBtn">cast my chart ✦</button>
           <p class="err" id="formErr" hidden></p>
         </form>
+
+        <!-- Nerd mode: reveals the full expert tables at the foot of the
+             reading. Hidden until a chart exists, like the ship check below. -->
+        <div class="nerd-switch" id="nerdSwitch" hidden>
+          <label class="switch-row">
+            <span class="switch-text">
+              <b>✦ nerd mode</b>
+              <small>grahas, dasha, vargas, ashtakavarga</small>
+            </span>
+            <input type="checkbox" id="nerdMode" class="switch-input" />
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+          </label>
+        </div>
 
         <!-- ===== Ship check (Guna Milan / Ashtakoot compatibility) ===== -->
         <div id="matchCard" class="match-card" hidden>
@@ -231,6 +247,9 @@
     </div>
 
     <script src="theme.js"></script>
+    <!-- Yoga names + generated rarity table, both read by app.js. -->
+    <script src="yoga-names.js"></script>
+    <script src="yoga-rarity.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -16,7 +16,11 @@ create table if not exists public.users (
   google_id  text,                               -- set for Google (OAuth) accounts
   salt       text,                               -- null for Google-only accounts
   hash       text,                               -- scrypt hash (never plaintext); null for Google
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  streak_current integer not null default 0,     -- consecutive days checked in
+  streak_longest integer not null default 0,     -- best run ever
+  streak_last    text,                           -- last check-in, the USER's local YYYY-MM-DD
+  streak_days    integer not null default 0      -- distinct days checked in, all time
 );
 
 -- Bring an already-created users table up to the schema above (idempotent).
@@ -25,6 +29,13 @@ alter table public.users add column if not exists google_id text;
 alter table public.users alter column username drop not null;
 alter table public.users alter column salt     drop not null;
 alter table public.users alter column hash     drop not null;
+
+-- Daily check-in streak. streak_last is the user's OWN local date (text, not a
+-- date column) because "today" has to mean today where they are, not in UTC.
+alter table public.users add column if not exists streak_current integer not null default 0;
+alter table public.users add column if not exists streak_longest integer not null default 0;
+alter table public.users add column if not exists streak_last    text;
+alter table public.users add column if not exists streak_days    integer not null default 0;
 
 -- Unique on email/google_id only where present (multiple NULLs stay allowed).
 create unique index if not exists idx_users_email     on public.users(email)     where email     is not null;

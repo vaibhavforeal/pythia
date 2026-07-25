@@ -273,6 +273,21 @@ button {
 }
 .yoga.bad { border-left-color: var(--amber); background: var(--field); }
 .y-name { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+/* Sanskrit name kept alongside the plain-language one — the classical name is
+   what someone can actually look up, so nerd mode keeps it visible. */
+.y-classic {
+  display: block; margin-top: 1px;
+  font-size: 10px; font-weight: 500; font-style: italic;
+  letter-spacing: .2px; color: var(--faint);
+}
+/* Population frequency from tools/yoga-frequency.js. Nerd mode shows it even
+   when common — the point here is the real number, not the flex. */
+.y-rare {
+  margin-left: 7px; padding: 1px 6px; border-radius: 3px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .2px;
+  color: var(--sky-deep); background: var(--sky-soft); border: 1px solid var(--line);
+  white-space: nowrap;
+}
 .yoga.bad .y-name { color: var(--amber); }
 .y-detail { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
 .chart-card .yogas .none { font-size: 11.5px; color: var(--faint); }
@@ -464,6 +479,51 @@ button {
 }
 /* Inline sign glyph beside the Moon / Rising values. */
 .cid-zodiac { color: #a5b4fc; font-size: 0.82em; margin-left: 6px; opacity: .92; }
+
+/* ---- Character-sheet stat bars ----
+   The same four numbers the share image draws, so the exported PNG matches
+   what's on screen. Bars take the Moon element's accent via --elem. */
+.cid-arch {
+  position: relative; z-index: 1;
+  margin: 13px 0 10px;
+  font: 700 10px/1 var(--font); letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--elem, #a5b4fc);
+  text-shadow: 0 0 18px rgba(129, 140, 248, .5);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--elem, #818cf8) 55%, transparent);
+}
+.cid-stats {
+  position: relative; z-index: 1; list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.cid-stats li { display: grid; grid-template-columns: 62px 1fr 26px; align-items: center; gap: 9px; }
+.cid-stat-label {
+  font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase;
+  color: rgba(255, 255, 255, .6);
+}
+.cid-bar { height: 7px; border-radius: 999px; background: rgba(255, 255, 255, .13); overflow: hidden; }
+.cid-bar i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--elem, #818cf8);
+  box-shadow: 0 0 12px -2px var(--elem, #818cf8);
+  transform-origin: left center;
+  animation: cid-fill .8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes cid-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cid-stat-val {
+  font-family: var(--font-head); font-size: 12px; font-weight: 600;
+  text-align: right; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, .9);
+}
+/* Feed hero runs bigger, like the rest of the Cosmic ID there. */
+.feed .cid-arch { font-size: 11px; letter-spacing: 1.9px; margin: 16px 0 12px; }
+.feed .cid-stats { gap: 10px; }
+.feed .cid-stats li { grid-template-columns: 72px 1fr 30px; gap: 12px; }
+.feed .cid-stat-label { font-size: 10px; }
+.feed .cid-bar { height: 8px; }
+.feed .cid-stat-val { font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cid-bar i { animation: none; }
+}
 /* Role glyphs (☾ ★ ↑) as subtle circular badges. */
 .cid-rows .cid-glyph {
   width: 24px; height: 24px; display: grid; place-items: center;
@@ -541,7 +601,25 @@ button {
 .pw-emoji { font-size: 20px; line-height: 1.2; flex: 0 0 auto; }
 .pw-list li b { display: block; font-size: 14px; font-weight: 700; color: #fff; }
 .pw-list li small { display: block; font-size: 12px; color: rgba(255,255,255,.82); line-height: 1.45; margin-top: 2px; }
-.pw-tag { display: inline-block; font-size: 10.5px; letter-spacing: .2px; color: rgba(255,255,255,.65); margin-top: 4px; padding: 2px 8px; background: rgba(255,255,255,.08); border-radius: 4px; }
+/* Container for the yoga name chips (was a single pill before rarity badges). */
+.pw-tag { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.pw-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; letter-spacing: .2px; color: rgba(255, 255, 255, .68);
+  padding: 2px 8px; background: rgba(255, 255, 255, .08); border-radius: 4px;
+}
+/* Rarity only shows when it's actually a flex — see RARITY_BADGE_MAX. */
+.pw-rare {
+  font-style: normal; font-weight: 700; font-size: 9.5px;
+  color: #fde68a; background: rgba(253, 230, 138, .16);
+  padding: 1px 5px; border-radius: 3px;
+}
+.pw-rarest {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, .16);
+  font-size: 11.5px; line-height: 1.5; color: rgba(255, 255, 255, .72);
+}
+.pw-rarest b { color: #fde68a; font-weight: 700; }
 
 /* "go deeper →" pill */
 .vibe-cta {
@@ -600,16 +678,46 @@ button {
   border-radius: 18px; overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm);
 }
-.nerd-toggle {
-  width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 14px 18px; background: var(--panel); color: var(--ink);
-  font: 700 14.5px var(--font); text-align: left; cursor: pointer;
+/* No header button above it any more, so the panel carries its own top pad. */
+.nerd-panel { padding: 16px; }
+
+/* ---------- Sidebar switch that drives nerd mode ----------
+   Lives in the panel with the other preferences; the tables it reveals sit at
+   the foot of the reading. Native checkbox stays in the DOM for keyboard and
+   screen-reader use, visually replaced by the track + knob. */
+.nerd-switch { margin: 0 0 16px; }
+.switch-row {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 0; padding: 11px 13px;
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: border-color .15s, background .15s;
 }
-.nerd-toggle:hover { background: var(--sky-soft); }
-.nerd-label { flex: 0 0 auto; }
-.nerd-hint { flex: 1 1 140px; min-width: 0; font-size: 11.5px; font-weight: 500; color: var(--muted); }
-.nerd-caret { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
-.nerd-panel { padding: 2px 16px 14px; border-top: 1px solid var(--line); }
+.switch-row:hover { border-color: var(--sky); background: var(--sky-soft); }
+.switch-text { flex: 1 1 auto; min-width: 0; }
+.switch-text b { display: block; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.switch-text small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--muted); }
+.switch-input {
+  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+  opacity: 0; pointer-events: none;
+}
+.switch-track {
+  flex: 0 0 auto; position: relative; display: block;
+  width: 38px; height: 22px; border-radius: 999px;
+  background: var(--line); transition: background .2s ease;
+}
+.switch-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.switch-input:checked + .switch-track { background: var(--sky); }
+.switch-input:checked + .switch-track .switch-knob { transform: translateX(16px); }
+.switch-input:focus-visible + .switch-track { box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.28); }
+@media (prefers-reduced-motion: reduce) {
+  .switch-knob { transition: none; }
+}
 /* Reuse the original chart-card table styles, minus its card chrome. */
 .nerd-inner { margin: 0; padding: 0; background: none; border: none; box-shadow: none; border-radius: 0; }
 
@@ -754,6 +862,47 @@ button {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
 }
 .logout:hover { color: var(--err); border-color: var(--err); }
+
+/* ---------- Daily streak chip ----------
+   Appears in the sidebar account row and in the mobile branding bar, since the
+   sidebar is behind the ☰ drawer on phones and a streak nobody sees is dead. */
+.streak {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; line-height: 1.4;
+  color: #b45309; background: rgba(251, 191, 36, .16);
+  border: 1px solid rgba(251, 191, 36, .45);
+  cursor: default; user-select: none;
+}
+.streak b { font-weight: 700; font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .streak { color: #fcd34d; background: rgba(251, 191, 36, .14); }
+.streak.pop { animation: streak-pop .55s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes streak-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+/* The toggle keeps the right edge; a visible streak chip takes the auto margin. */
+.mobile-bar .theme-toggle { margin-left: auto; }
+.mobile-bar .streak { margin-left: auto; }
+.mobile-bar .streak:not([hidden]) ~ .theme-toggle { margin-left: 8px; }
+
+/* Transient confirmation — streaks need a moment, and there's nowhere else
+   in the layout for one to land. */
+.toast {
+  position: fixed; left: 50%; bottom: 28px; z-index: 90;
+  transform: translate(-50%, 14px); opacity: 0;
+  padding: 11px 20px; border-radius: 999px;
+  font: 600 13.5px var(--font); color: #fff;
+  background: rgba(15, 23, 42, .94); box-shadow: 0 10px 30px rgba(2, 8, 23, .38);
+  transition: opacity .25s ease, transform .25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.toast.in { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) {
+  .streak.pop { animation: none; }
+  .toast { transition: opacity .25s ease; }
+}
 
 /* ---------- Saved people ---------- */
 .people-card {

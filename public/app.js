@@ -7,7 +7,10 @@ let nodeMode = "jupiter"; // Rahu/Ketu aspects: "jupiter" (5/7/9) | "seventh" (7
 let lastInput = null; // last birth input, so the node toggle can recompute
 let currentVarga = "D10"; // which divisional chart the selector shows
 let currentBav = "Saturn"; // which planet's Bhinnashtakavarga the SAV table shows
-let nerdOpen = false; // whether the "nerd mode" table panel is expanded in the feed
+// Nerd mode is a sticky preference (sidebar switch), not a per-visit disclosure.
+let nerdOpen = (() => {
+  try { return localStorage.getItem("nerdMode") === "1"; } catch (_) { return false; }
+})();
 
 // ---- Elements -------------------------------------------------------------
 const $ = id => document.getElementById(id);
@@ -311,6 +314,24 @@ const YOGA_VIBES = {
   Challenging: { emoji: "△", title: "plot-twist arc",      line: "an intense pattern — real growth through the hard stuff." }
 };
 
+// YOGA_ALIAS / yogaAlias() live in yoga-names.js (shared with the rarity
+// generator); YOGA_RARITY in the generated yoga-rarity.js. Both load first.
+
+// How rare a yoga is, as a share of sampled charts — see tools/yoga-frequency.js.
+// Anything at or above this is too common to call a superpower, so it renders
+// without a badge rather than bragging about a coin flip.
+const RARITY_BADGE_MAX = 25;
+function yogaRarity(alias) {
+  if (typeof YOGA_RARITY === "undefined") return null;
+  const pct = YOGA_RARITY[alias];
+  return Number.isFinite(pct) ? pct : null;
+}
+// "6%" for the genuinely rare, "<1%" rather than "0%" for the very rare.
+function rarityLabel(pct) {
+  if (pct === null || pct >= RARITY_BADGE_MAX) return "";
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
 // Group yogas by category into de-duplicated rows (emoji, title, line, names[]),
 // so several yogas of one category collapse into a single card row.
 function groupYogas(yogas) {
@@ -318,7 +339,8 @@ function groupYogas(yogas) {
   const by = {};
   for (const y of yogas || []) {
     if (!by[y.category]) { by[y.category] = []; order.push(y.category); }
-    if (!by[y.category].includes(y.name)) by[y.category].push(y.name);
+    const alias = yogaAlias(y);
+    if (!by[y.category].includes(alias)) by[y.category].push(alias);
   }
   return order.map(cat => {
     const g = YOGA_VIBES[cat] || { emoji: "✅", title: cat, line: "" };
@@ -331,6 +353,14 @@ function renderCosmicId(c) {
   const asc = c.ascendant || {};
   const mi = moon.signIndex;
   const vibe = SIGN_VIBES[mi] ?? "one of one";
+  const { stats, archetype } = cosmicStats(c);
+  const bars = stats
+    .map(
+      s => `<li><span class="cid-stat-label">${s.label}</span>
+          <span class="cid-bar"><i style="width:${s.value}%"></i></span>
+          <span class="cid-stat-val">${s.value}</span></li>`
+    )
+    .join("");
   const star = (c.dasha && c.dasha.moonNakshatra) || moon.nakshatra || "";
   const pada = c.dasha && c.dasha.moonPada;
   const el = Number.isInteger(mi) ? elementOf(mi) : ELEMENTS[0];
@@ -352,11 +382,115 @@ function renderCosmicId(c) {
         <li><span class="cid-glyph">↑</span><span class="cid-label">Rising</span>
           <span class="cid-val">${asc.sign || "—"}${zg(asc.signIndex)}${sa(asc.signSanskrit)}</span></li>
       </ul>
+      <div class="cid-arch">${archetype}</div>
+      <ul class="cid-stats">${bars}</ul>
       <div class="cid-vibe">“${vibe}”</div>
       <div class="cid-actions">
         <button type="button" class="cid-share" id="cidShare">Share your ID ✦</button>
       </div>
     </div>`;
+}
+
+// ---- Cosmic stats: the character-sheet bars on the share card -------------
+// Four playful axes, each a weighted blend of real placements, so two people
+// rarely score alike. Fully deterministic — the same chart always draws the
+// same bars. These are a vibe read, not a classical Jyotish measure; the
+// ingredients are classical (bindus, element, house, dasha lord), the framing
+// is not.
+const MOVABLE_SIGNS = [0, 3, 6, 9];  // chara — initiating
+const FIXED_SIGNS = [1, 4, 7, 10];   // sthira — persistent
+
+// Weight a sign by its element, reusing elementOf() so these can't drift from
+// the accent colour the card is tinted with. `w` maps element name -> 0-1.
+const byElement = (sign, w) =>
+  Number.isInteger(sign) && sign >= 0 ? w[elementOf(sign).name] ?? 0.5 : 0.5;
+
+// Each axis blends a different set of terms, so their raw scores don't sit at
+// the same height — CHARM ran ~13 points hotter than SOFTNESS before this. These
+// centres were measured over 200 sample charts; subtracting them puts every
+// axis at a ~50 median, so the winning stat (which names the archetype) says
+// something about the chart rather than about which formula runs hot.
+const STAT_CENTER = { CHAOS: 0.492, SOFTNESS: 0.449, "LOCK-IN": 0.463, CHARM: 0.557 };
+
+// Raw blends cluster near their centre, so apply gain on the way out or every
+// card reads as a wall of 50s. Clamped to leave the bar visibly un-maxed.
+const statPct = (label, raw) =>
+  Math.max(15, Math.min(97, Math.round(50 + (raw - (STAT_CENTER[label] ?? 0.5)) * 138)));
+
+// Highest stat names the archetype chip.
+const ARCHETYPES = {
+  CHAOS: "the plot twist",
+  SOFTNESS: "the safe place",
+  "LOCK-IN": "the quiet grind",
+  CHARM: "the magnet"
+};
+
+function cosmicStats(c) {
+  const P = {};
+  (c.planets || []).forEach(p => (P[p.key] = p));
+  const av = c.ashtakavarga || {};
+
+  // A graha's own bindus in the sign it occupies (0-8) — the classical "how
+  // supported is this planet" number — normalised to 0-1. Rahu/Ketu have no
+  // Bhinnashtakavarga of their own, so they read as neutral.
+  const b = k => {
+    const p = P[k], arr = av.bav && av.bav[k];
+    if (!p || !arr) return 0.5;
+    const v = arr[p.signIndex];
+    return Number.isFinite(v) ? v / 8 : 0.5;
+  };
+  const houseOf = k => (P[k] ? P[k].house : 0);
+  const inH = (k, hs) => hs.includes(houseOf(k));
+  const countIn = (keys, hs) => keys.filter(k => inH(k, hs)).length / keys.length;
+  const touches = (k, target) => {
+    const t = P[target];
+    if (!t) return false;
+    return (t.aspectedBy || []).includes(k) || (t.conjunctWith || []).includes(k);
+  };
+
+  const moonSign = P.Moon ? P.Moon.signIndex : -1;
+  const ascSign = (c.ascendant && c.ascendant.signIndex) ?? -1;
+  const ascLord = (c.ascendant && c.ascendant.signLord) || "";
+  const lord = (c.dasha && c.dasha.maha && c.dasha.maha.lord) || "";
+  const era = keys => (keys.includes(lord) ? 0.08 : 0); // the era you're in nudges its own axis
+  const retros = (c.planets || []).filter(p => p.retro && p.key !== "Rahu" && p.key !== "Ketu").length;
+  const dusthana = (c.planets || []).filter(p => [6, 8, 12].includes(p.house)).length;
+
+  // Rahu on an angle is loud; tucked in a trine it's quieter.
+  const rahuLoud = inH("Rahu", [1, 4, 7, 10]) ? 1 : inH("Rahu", [5, 9]) ? 0.55 : 0.2;
+  const moonHeld = touches("Jupiter", "Moon") ? 1 : 0.25;
+  const moonPressed = touches("Saturn", "Moon") || touches("Mars", "Moon") ? 1 : 0;
+
+  const raw = {
+    // Rahu, Mars, the difficult houses and retrogrades — the unpredictable stuff.
+    CHAOS:
+      0.26 * b("Mars") + 0.24 * rahuLoud + 0.20 * Math.min(dusthana / 4, 1) +
+      0.14 * Math.min(retros / 3, 1) +
+      0.16 * byElement(moonSign, { Fire: 1, Earth: 0.25, Air: 0.55, Water: 0.35 }) +
+      era(["Rahu", "Ketu", "Mars"]),
+    // Moon and Venus, water, benefics on the angles — how gently you land.
+    SOFTNESS:
+      0.30 * b("Moon") + 0.20 * b("Venus") +
+      0.18 * byElement(moonSign, { Fire: 0.2, Earth: 0.6, Air: 0.35, Water: 1 }) +
+      0.16 * moonHeld + 0.16 * countIn(["Jupiter", "Venus", "Moon"], [1, 4, 7, 10]) -
+      0.10 * moonPressed + era(["Moon", "Venus"]),
+    // Saturn, Sun, the 10th and fixed signs — capacity to sit in the reps.
+    "LOCK-IN":
+      0.28 * b("Saturn") + 0.22 * b("Sun") + 0.18 * Math.min(
+        (c.planets || []).filter(p => p.house === 10).length / 2, 1
+      ) + 0.16 * (FIXED_SIGNS.includes(ascSign) ? 1 : MOVABLE_SIGNS.includes(ascSign) ? 0.75 : 0.45) +
+      0.16 * b("Mars") + era(["Saturn", "Sun", "Mars"]),
+    // Venus, Mercury, and the houses people actually see you in.
+    CHARM:
+      0.30 * b("Venus") + 0.20 * b("Mercury") +
+      0.18 * countIn(["Venus", "Moon", "Mercury"], [1, 5, 7, 11]) +
+      0.16 * (["Venus", "Mercury", "Moon"].includes(ascLord) ? 1 : ascLord === "Jupiter" ? 0.6 : 0.3) +
+      0.16 * b("Moon") + era(["Venus", "Mercury", "Moon"])
+  };
+
+  const stats = Object.keys(raw).map(label => ({ label, value: statPct(label, raw[label]) }));
+  const top = stats.reduce((a, s) => (s.value > a.value ? s : a), stats[0]);
+  return { stats, archetype: ARCHETYPES[top.label] || "one of one" };
 }
 
 // ---- Shareable "Cosmic ID" story image (9:16) -----------------------------
@@ -472,6 +606,42 @@ async function storyScaffold(ctx, W, H, sectionLabel) {
   ls(ctx, "0px");
 }
 
+// roundRect is recent (Chrome 99 / Safari 16) — fall back to a square bar
+// rather than throwing on older browsers.
+function barPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
+// One labelled stat row: NAME on the left, value on the right, bar beneath.
+function drawStatBar(ctx, stat, x, y, w, accent) {
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(198,222,255,0.85)";
+  ctx.font = "600 30px Raleway, sans-serif";
+  ls(ctx, "4px");
+  ctx.fillText(stat.label, x, y);
+  ls(ctx, "0px");
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 42px Lora, Georgia, serif";
+  ctx.fillText(String(stat.value), x + w, y + 6);
+
+  const by = y + 28, bh = 20, r = bh / 2;
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  barPath(ctx, x, by, w, bh, r);
+  ctx.fill();
+
+  ctx.save();
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 24;
+  ctx.fillStyle = accent;
+  barPath(ctx, x, by, Math.max(bh, Math.round((w * stat.value) / 100)), bh, r);
+  ctx.fill();
+  ctx.restore();
+}
+
 async function buildStoryImage(data) {
   const W = 1080, H = 1920;
   const canvas = document.createElement("canvas");
@@ -479,34 +649,33 @@ async function buildStoryImage(data) {
   const ctx = canvas.getContext("2d");
   await storyScaffold(ctx, W, H, "✦  YOUR COSMIC ID  ✦");
 
-  const items = [
-    ["MOON", data.moon.sign, data.moon.signSanskrit],
-    ["STAR", data.star, data.pada ? "pada " + data.pada : ""],
-    ["RISING", data.asc.sign, data.asc.signSanskrit]
-  ];
-  let y = 830;
-  for (const [label, val, sub] of items) {
-    ctx.fillStyle = "rgba(188,216,255,0.85)";
-    ctx.font = "600 30px Raleway, sans-serif";
-    ls(ctx, "3px");
-    ctx.fillText(label, W / 2, y);
-    ls(ctx, "0px");
+  const accent = (data.element && data.element.color) || "#7dd3fc";
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "600 90px Lora, Georgia, serif";
-    ctx.fillText(val || "—", W / 2, y + 92);
+  // Big three, compact — the stat bars carry the card now.
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 60px Lora, Georgia, serif";
+  ctx.fillText(`☾ ${data.moon.sign || "—"}    ★ ${data.star || "—"}`, W / 2, 800);
+  ctx.fillStyle = "rgba(255,255,255,0.72)";
+  ctx.font = "500 44px Lora, Georgia, serif";
+  ctx.fillText(`↑ ${data.asc.sign || "—"} rising`, W / 2, 864);
 
-    if (sub) {
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.font = "400 34px Raleway, sans-serif";
-      ctx.fillText(sub, W / 2, y + 140);
-    }
-    y += 232;
+  // Archetype chip, named after whichever stat came out on top.
+  ctx.fillStyle = accent;
+  ctx.font = "600 34px Raleway, sans-serif";
+  ls(ctx, "6px");
+  ctx.fillText(String(data.archetype).toUpperCase(), W / 2, 958);
+  ls(ctx, "0px");
+
+  let y = 1064;
+  for (const s of data.stats) {
+    drawStatBar(ctx, s, 150, y, 780, accent);
+    y += 118;
   }
 
+  ctx.textAlign = "center"; // drawStatBar leaves it right-aligned
   ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "italic 500 46px Lora, Georgia, serif";
-  centerWrap(ctx, "“" + data.vibe + "”", W / 2, 1600, W - 200, 62);
+  ctx.font = "italic 500 44px Lora, Georgia, serif";
+  centerWrap(ctx, "“" + data.vibe + "”", W / 2, 1650, W - 200, 58);
 
   return canvasBlob(canvas);
 }
@@ -579,12 +748,16 @@ async function runShare(btn, busyLabel, build) {
 
 function shareCosmicId(c) {
   const moon = c.planets.find(p => p.key === "Moon") || {};
+  const { stats, archetype } = cosmicStats(c);
   const data = {
     moon,
     asc: c.ascendant || {},
     star: (c.dasha && c.dasha.moonNakshatra) || moon.nakshatra || "",
     pada: c.dasha && c.dasha.moonPada,
-    vibe: SIGN_VIBES[moon.signIndex] ?? "one of one"
+    vibe: SIGN_VIBES[moon.signIndex] ?? "one of one",
+    element: Number.isInteger(moon.signIndex) ? elementOf(moon.signIndex) : ELEMENTS[0],
+    stats,
+    archetype
   };
   return runShare($("cidShare"), "Creating…", async () => {
     const blob = await buildStoryImage(data);
@@ -689,7 +862,7 @@ function renderPowerCard(c) {
     `<li><span class="pw-emoji">${g.emoji}</span><div>
         <b>${g.title}</b>
         <small>${g.line}</small>
-        <span class="pw-tag">${g.names.map(escAttr).join(" · ")}</span>
+        <span class="pw-tag">${g.names.map(rarityChip).join("")}</span>
       </div></li>`
   ).join("");
   return `
@@ -698,8 +871,30 @@ function renderPowerCard(c) {
       <div class="vc-kicker">your green flags <span class="vc-badge">${groups.length}</span></div>
       <div class="vc-head">your superpowers</div>
       <ul class="pw-list">${rows}</ul>
+      ${renderRarestLine(fav)}
       <button type="button" class="vibe-cta" data-cta="power">break down my strengths →</button>
     </div>`;
+}
+
+// A yoga name, with how rare it is when that's actually a flex.
+function rarityChip(alias) {
+  const label = rarityLabel(yogaRarity(alias));
+  return `<span class="pw-chip">${escAttr(alias)}${label ? `<i class="pw-rare">${label}</i>` : ""}</span>`;
+}
+
+// Headline the single rarest thing in the chart — the most postable fact here.
+function renderRarestLine(yogas) {
+  let best = null;
+  for (const y of yogas || []) {
+    const alias = yogaAlias(y);
+    const pct = yogaRarity(alias);
+    if (pct === null) continue;
+    if (!best || pct < best.pct) best = { alias, pct };
+  }
+  if (!best || best.pct >= RARITY_BADGE_MAX) return "";
+  const share = best.pct < 1 ? "under 1%" : `just ${Math.round(best.pct)}%`;
+  return `<div class="pw-rarest">rarest in your chart · <b>${escAttr(best.alias)}</b>
+    — ${share} of charts have it</div>`;
 }
 
 // Heads up — challenging yogas + active Sade Sati / small panoti.
@@ -708,7 +903,7 @@ function renderHeadsUpCard(c) {
     emoji: g.emoji,
     name: g.title,
     line: g.line,
-    tag: g.names.join(" · ")
+    tag: g.names.map(rarityChip).join("")
   }));
   const ss = c.sadeSati;
   if (ss && ss.active) {
@@ -731,7 +926,7 @@ function renderHeadsUpCard(c) {
     </div>`;
   }
   const rows = items.slice(0, 4).map(i =>
-    `<li><span class="pw-emoji">${i.emoji}</span><div><b>${escAttr(i.name)}</b><small>${i.line}</small>${i.tag ? `<span class="pw-tag">${escAttr(i.tag)}</span>` : ""}</div></li>`
+    `<li><span class="pw-emoji">${i.emoji}</span><div><b>${escAttr(i.name)}</b><small>${i.line}</small>${i.tag ? `<span class="pw-tag">${i.tag}</span>` : ""}</div></li>`
   ).join("");
   return `
     <div class="vibe-card vc-heads">
@@ -771,14 +966,16 @@ function renderChartCard(c) {
     renderPowerCard(c) +
     renderHeadsUpCard(c) +
     renderShipCta() +
-    `<div class="nerd-card">
-      <button type="button" class="nerd-toggle" id="nerdToggle" aria-expanded="${nerdOpen ? "true" : "false"}">
-        <span class="nerd-label">✦ nerd mode</span>
-        <span class="nerd-hint">the real chart — grahas, dasha, vargas, ashtakavarga</span>
-        <span class="nerd-caret">${nerdOpen ? "▲" : "▼"}</span>
-      </button>
-      <div class="nerd-panel"${nerdOpen ? "" : " hidden"}><div class="chart-card nerd-inner">${renderNerdPanel(c)}</div></div>
+    `<div class="nerd-card"${nerdOpen ? "" : " hidden"}>
+      <div class="nerd-panel"><div class="chart-card nerd-inner">${renderNerdPanel(c)}</div></div>
     </div>`;
+
+  // The sidebar switch drives the panel, so it only makes sense once a chart
+  // exists — reveal it on the first cast, same as the ship check.
+  const sw = $("nerdSwitch");
+  if (sw) sw.hidden = false;
+  const cb = $("nerdMode");
+  if (cb) cb.checked = nerdOpen;
 
   // Once the feed is up, the welcome placeholder is redundant.
   const w = $("welcome");
@@ -911,6 +1108,24 @@ function renderNerdPanel(c) {
     </div>`;
 }
 
+// Sidebar switch for nerd mode. #nerdSwitch is static markup, so this binds
+// once; the panel it controls lives at the foot of the (rebuilt) feed.
+function setupNerdSwitch() {
+  const cb = $("nerdMode");
+  if (!cb) return;
+  cb.checked = nerdOpen;
+  cb.addEventListener("change", () => {
+    nerdOpen = cb.checked;
+    try { localStorage.setItem("nerdMode", nerdOpen ? "1" : "0"); } catch (_) { /* private mode */ }
+    const card = document.querySelector("#feed .nerd-card");
+    if (card) card.hidden = !nerdOpen;
+    // Jumping to the tables makes the switch feel connected to something that
+    // is otherwise off-screen at the bottom of the reading.
+    if (nerdOpen && card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+setupNerdSwitch();
+
 // One-time delegated wiring for the feed. #feed is rebuilt on every cast, so we
 // bind on the stable container rather than on each generated button/select.
 function setupFeed() {
@@ -921,15 +1136,6 @@ function setupFeed() {
     const cta = e.target.closest(".vibe-cta");
     if (cta) return handleCta(cta.dataset.cta);
     if (e.target.closest(".cid-share")) { if (chart) shareCosmicId(chart); return; }
-    const nt = e.target.closest(".nerd-toggle");
-    if (nt) {
-      nerdOpen = !nerdOpen;
-      const panel = feed.querySelector(".nerd-panel");
-      if (panel) panel.hidden = !nerdOpen;
-      nt.setAttribute("aria-expanded", nerdOpen ? "true" : "false");
-      const caret = nt.querySelector(".nerd-caret");
-      if (caret) caret.textContent = nerdOpen ? "▲" : "▼";
-    }
   });
 
   feed.addEventListener("change", e => {
@@ -1202,10 +1408,16 @@ function renderYogasHTML(yogas) {
   }
   const rows = yogas
     .map(
-      y => `<li class="yoga${y.favorable ? "" : " bad"}">
-        <div class="y-name">${y.name}</div>
+      y => {
+        const pct = yogaRarity(yogaAlias(y));
+        // Nerd mode gets the real number even when it's common — no threshold.
+        const rare = pct === null ? "" :
+          `<span class="y-rare">${pct < 1 ? "<1" : Math.round(pct)}% of charts</span>`;
+        return `<li class="yoga${y.favorable ? "" : " bad"}">
+        <div class="y-name">${yogaAlias(y)}${rare}<small class="y-classic">${y.name}</small></div>
         <div class="y-detail">${y.detail}</div>
-      </li>`
+      </li>`;
+      }
     )
     .join("");
   return `<div class="yogas">
@@ -1433,6 +1645,62 @@ function onAuthed(user) {
   if (mobileBar) mobileBar.hidden = false; // and the fixed mobile branding bar
   loadPeople();
   loadConversations();
+  checkInStreak();
+}
+
+// ---- Daily streak ---------------------------------------------------------
+// One round trip records today's visit and returns the resulting streak. The
+// date is the browser's own local date — the server only sanity-checks it,
+// because "today" has to mean today where the user is (see server/streak.js).
+async function checkInStreak() {
+  const d = new Date();
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  try {
+    const res = await fetch("/api/streak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: today })
+    });
+    if (!res.ok) return; // streak is decoration — never block the app on it
+    renderStreak(await res.json());
+  } catch (_) {
+    /* offline: no streak chip, everything else still works */
+  }
+}
+
+function renderStreak(s) {
+  if (!s || !Number.isFinite(s.current)) return;
+  const title =
+    `${s.current}-day streak · best ${s.longest} · ${s.days} day${s.days === 1 ? "" : "s"} total` +
+    (s.nextMilestone ? ` · ${s.nextMilestone - s.current} to go` : "");
+  for (const id of ["streakChip", "streakChipMobile"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.hidden = false;
+    el.title = title;
+    const n = el.querySelector(".streak-n");
+    if (n) n.textContent = String(s.current);
+    if (s.isNewDay) {
+      el.classList.remove("pop");
+      void el.offsetWidth; // restart the animation on a re-render
+      el.classList.add("pop");
+    }
+  }
+  if (!s.isNewDay) return;
+  if (s.milestone) toast(`🔥 ${s.current}-day streak — you're locked in`);
+  else if (s.current > 1) toast(`🔥 day ${s.current}`);
+}
+
+function toast(msg) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("in"));
+  setTimeout(() => {
+    el.classList.remove("in");
+    setTimeout(() => el.remove(), 320);
+  }, 2800);
 }
 
 function applyAuthMode() {

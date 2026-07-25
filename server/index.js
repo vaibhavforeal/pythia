@@ -12,6 +12,7 @@ const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
 const oauth = require("./oauth");
+const streak = require("./streak");
 const store = require("./store");
 const { users, people, conversations } = store;
 
@@ -251,6 +252,37 @@ app.delete("/api/people/:id", async (req, res) => {
   } catch (err) {
     console.error("delete person error:", err);
     res.status(500).json({ error: "Delete failed." });
+  }
+});
+
+// --- Daily check-in streak --------------------------------------------------
+// POST because it mutates. The client sends its own local date (see streak.js
+// for why) and gets back the resulting streak, so one round trip both records
+// the visit and renders the badge.
+app.post("/api/streak", async (req, res) => {
+  try {
+    const today = String((req.body && req.body.date) || "");
+    if (!streak.plausibleToday(today)) {
+      return res.status(400).json({ error: "Bad date." });
+    }
+    const prev = await users.getStreak(req.userId);
+    if (!prev) return res.status(404).json({ error: "No such user." });
+
+    const next = streak.advance(prev, today);
+    if (next.changed) {
+      await users.setStreak(req.userId, next);
+    }
+    res.json({
+      current: next.current,
+      longest: next.longest,
+      days: next.days,
+      isNewDay: next.changed,
+      milestone: next.milestone,
+      nextMilestone: streak.nextMilestone(next.current)
+    });
+  } catch (err) {
+    console.error("streak error:", err);
+    res.status(500).json({ error: "Could not record your streak." });
   }
 });
 

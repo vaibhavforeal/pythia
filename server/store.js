@@ -68,6 +68,36 @@ function supabaseBackend(url, key) {
         const { error } = await sb.from("users").update(upd).eq("id", id);
         if (error) throw error;
         return true;
+      },
+      // Streak is exposed as { current, longest, last, days } by both backends,
+      // so the column naming stays an implementation detail in here.
+      async getStreak(id) {
+        const { data, error } = await sb
+          .from("users")
+          .select("streak_current, streak_longest, streak_last, streak_days")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) return null;
+        return {
+          current: data.streak_current || 0,
+          longest: data.streak_longest || 0,
+          last: data.streak_last || null,
+          days: data.streak_days || 0
+        };
+      },
+      async setStreak(id, s) {
+        const { error } = await sb
+          .from("users")
+          .update({
+            streak_current: s.current,
+            streak_longest: s.longest,
+            streak_last: s.last,
+            streak_days: s.days
+          })
+          .eq("id", id);
+        if (error) throw error;
+        return true;
       }
     },
     people: {
@@ -173,6 +203,26 @@ function jsonBackend() {
         const u = all.find(x => x.id === id);
         if (!u) return false;
         Object.assign(u, patch);
+        write(USERS, all);
+        return true;
+      },
+      // Mirrors the Supabase backend's { current, longest, last, days } shape.
+      async getStreak(id) {
+        const u = read(USERS).find(x => x.id === id);
+        if (!u) return null;
+        const s = u.streak || {};
+        return {
+          current: s.current || 0,
+          longest: s.longest || 0,
+          last: s.last || null,
+          days: s.days || 0
+        };
+      },
+      async setStreak(id, s) {
+        const all = read(USERS);
+        const u = all.find(x => x.id === id);
+        if (!u) return false;
+        u.streak = { current: s.current, longest: s.longest, last: s.last, days: s.days };
         write(USERS, all);
         return true;
       }
