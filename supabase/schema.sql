@@ -41,6 +41,13 @@ alter table public.users add column if not exists soul_id_at     timestamptz;
 create unique index if not exists idx_users_phone   on public.users(phone)   where phone   is not null;
 create unique index if not exists idx_users_soul_id on public.users(soul_id) where soul_id is not null;
 
+-- Your own birth details. Needed server-side so friend compatibility and the
+-- daily flow can be computed without either party handing over the other's
+-- chart; friends only ever see signs (see server/friends.js). Also means your
+-- profile follows you to a new device instead of living in one browser.
+alter table public.users add column if not exists birth      jsonb;
+alter table public.users add column if not exists birth_role text;   -- 'groom' | 'bride'
+
 -- Pending OTPs, one row per number. The code itself is never stored — only an
 -- HMAC of it, bound to the number — so a database read yields no working codes.
 create table if not exists public.otps (

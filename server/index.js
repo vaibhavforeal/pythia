@@ -333,7 +333,11 @@ app.get("/api/account", async (req, res) => {
       phone: u.phone ? phoneLib.mask(u.phone) : null,
       phoneVerified: !!u.phoneVerified,
       email: u.email || null,
-      needsPhone: REQUIRE_PHONE && !u.phoneVerified
+      needsPhone: REQUIRE_PHONE && !u.phoneVerified,
+      // The client restores its profile from here, so a new device doesn't
+      // start blank. Your own birth is yours to read back.
+      birth: u.birth || null,
+      birthRole: u.birthRole || "groom"
     });
   } catch (err) {
     console.error("account error:", err);
@@ -603,6 +607,228 @@ app.post("/api/invite/:token/match", inviteMatchLimit, async (req, res) => {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
     console.error("invite match error:", err);
     res.status(500).json({ error: "Compatibility check failed." });
+  }
+});
+
+// --- Your own birth details --------------------------------------------------
+// Held server-side so friend compatibility and the daily flow can be computed
+// without either person handing over the other's chart, and so your profile
+// follows you to a new device. Friends never see this — only signs (friends.js).
+app.post("/api/account/birth", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const birth = parseBirth(b); // validates, throws HttpError
+    const role = b.role === "bride" ? "bride" : "groom";
+    await users.update(req.userId, { birth, birthRole: role });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    console.error("save birth error:", err);
+    res.status(500).json({ error: "Could not save your birth details." });
+  }
+});
+
+// --- Friends -----------------------------------------------------------------
+// Privacy: everything below returns names, Soul IDs, signs and scores. Nobody
+// ever receives another person's birth details or full chart.
+
+/** Chart for a user, or null when they haven't saved birth details yet. */
+async function chartForUser(user) {
+  if (!user || !user.birth) return null;
+  try {
+    return computeChart(parseBirth(user.birth));
+  } catch (_) {
+    return null; // corrupt stored birth shouldn't break someone else's list
+  }
+}
+
+// Look someone up by Soul ID and ask to connect.
+app.post("/api/friends/request", async (req, res) => {
+  try {
+    const wanted = soulid.normalize((req.body || {}).soulId);
+    if (!soulid.isValid(wanted)) return res.status(400).json({ error: "That isn't a Soul ID." });
+
+    const them = await users.findBySoulId(wanted);
+    const me = req.userId;
+    const theirId = them && them.id;
+    const pairKey = theirId ? friendsLib.pairKey(me, theirId) : null;
+
+    const reason = friendsLib.requestBlockedReason({
+      me,
+      them: theirId,
+      existingFriendship: pairKey ? await store.friends.get(pairKey) : null,
+      existingRequest: pairKey ? await store.friends.getRequest(pairKey) : null,
+      blocks: await store.friends.blocksFor(me)
+    });
+    if (reason) {
+      // "no-such-user" and "blocked" share a message on purpose: confirming a
+      // block would tell someone they've been blocked.
+      const status = reason === "no-such-user" || reason === "blocked" ? 404 : 409;
+      return res.status(status).json({ error: friendsLib.REASON_MESSAGE[reason], reason });
+    }
+
+    await store.friends.addRequest({
+      id: crypto.randomUUID(), pairKey, from: me, to: theirId,
+      source: "soul-id", createdAt: new Date().toISOString()
+    });
+    res.json({ sent: true, to: invite.safeName(them.soulId) });
+  } catch (err) {
+    console.error("friend request error:", err);
+    res.status(500).json({ error: "Could not send that request." });
+  }
+});
+
+// Requests waiting on me.
+app.get("/api/friends/requests", async (req, res) => {
+  try {
+    const rows = await store.friends.requestsTo(req.userId);
+    const out = [];
+    for (const r of rows) {
+      const from = await users.findById(r.from);
+      if (!from) continue;
+      out.push({
+        pairKey: r.pairKey,
+        source: r.source,
+        createdAt: r.createdAt,
+        ...friendsLib.publicFriend(
+          { id: from.id, soulId: from.soulId, name: displayName(from) },
+          await chartForUser(from)
+        )
+      });
+    }
+    res.json({ requests: out });
+  } catch (err) {
+    console.error("friend requests error:", err);
+    res.status(500).json({ error: "Could not load your requests." });
+  }
+});
+
+app.post("/api/friends/requests/:pairKey/accept", async (req, res) => {
+  try {
+    const r = await store.friends.getRequest(req.params.pairKey);
+    if (!r || r.to !== req.userId) return res.status(404).json({ error: "No such request." });
+    await store.friends.add({
+      pairKey: r.pairKey,
+      userA: String(r.from) < String(r.to) ? r.from : r.to,
+      userB: String(r.from) < String(r.to) ? r.to : r.from,
+      createdAt: new Date().toISOString()
+    });
+    await store.friends.removeRequest(r.pairKey);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("accept friend error:", err);
+    res.status(500).json({ error: "Could not accept that request." });
+  }
+});
+
+app.post("/api/friends/requests/:pairKey/decline", async (req, res) => {
+  try {
+    const r = await store.friends.getRequest(req.params.pairKey);
+    if (!r || r.to !== req.userId) return res.status(404).json({ error: "No such request." });
+    await store.friends.removeRequest(r.pairKey);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("decline friend error:", err);
+    res.status(500).json({ error: "Could not decline that request." });
+  }
+});
+
+app.delete("/api/friends/:id", async (req, res) => {
+  try {
+    const key = friendsLib.pairKey(req.userId, req.params.id);
+    const f = await store.friends.get(key);
+    if (!f) return res.status(404).json({ error: "Not connected." });
+    await store.friends.remove(key);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("unfriend error:", err);
+    res.status(500).json({ error: "Could not remove that connection." });
+  }
+});
+
+// Blocking also severs any friendship and cancels any pending request, so it
+// can't leave a live edge behind.
+app.post("/api/friends/:id/block", async (req, res) => {
+  try {
+    const target = String(req.params.id);
+    if (target === req.userId) return res.status(400).json({ error: "You can't block yourself." });
+    const key = friendsLib.pairKey(req.userId, target);
+    await store.friends.addBlock({
+      id: crypto.randomUUID(), blocker: req.userId, blocked: target,
+      createdAt: new Date().toISOString()
+    });
+    await store.friends.remove(key);
+    await store.friends.removeRequest(key);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("block error:", err);
+    res.status(500).json({ error: "Could not block them." });
+  }
+});
+
+app.delete("/api/friends/:id/block", async (req, res) => {
+  try {
+    await store.friends.removeBlock(req.userId, String(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("unblock error:", err);
+    res.status(500).json({ error: "Could not unblock them." });
+  }
+});
+
+// The constellation: everyone you're connected to, with today's flow and your
+// standing compatibility. Computed fresh — the transiting Moon moves daily.
+app.get("/api/friends", async (req, res) => {
+  try {
+    const me = await users.findById(req.userId);
+    if (!me) return res.status(404).json({ error: "No such user." });
+
+    const myChart = await chartForUser(me);
+    const myMoon = myChart && (myChart.planets || []).find(p => p.key === "Moon");
+    // The transiting Moon is shared by everyone, so compute it once.
+    const transitMoon = myChart && myChart.transits && (myChart.transits.planets || [])
+      .find(p => p.key === "Moon");
+
+    const rows = await store.friends.listFor(req.userId);
+    const out = [];
+    for (const f of rows) {
+      const them = await users.findById(friendsLib.otherId(f, req.userId));
+      if (!them) continue;
+      const theirChart = await chartForUser(them);
+      const base = friendsLib.publicFriend(
+        { id: them.id, soulId: them.soulId, name: displayName(them) },
+        theirChart
+      );
+
+      let flow = null;
+      let match = null;
+      if (myChart && theirChart && transitMoon) {
+        const theirMoon = (theirChart.planets || []).find(p => p.key === "Moon");
+        flow = friendsLib.dailyFlow(
+          myMoon && myMoon.signIndex,
+          theirMoon && theirMoon.signIndex,
+          transitMoon.signIndex
+        );
+        // Guna Milan is directional; map by each person's stated role.
+        const iAmGroom = (me.birthRole || "groom") !== "bride";
+        const boy = iAmGroom ? myChart : theirChart;
+        const girl = iAmGroom ? theirChart : myChart;
+        const g = computeGunaMilan(moonInputFromChart(boy), moonInputFromChart(girl));
+        match = { total: g.total, max: g.max, band: g.verdict && g.verdict.band, label: g.verdict && g.verdict.label };
+      }
+      out.push({ ...base, since: f.createdAt, flow, match });
+    }
+
+    // Flowing first, then friction, then by score — the point is "who today".
+    const order = { flowing: 0, steady: 1, friction: 2 };
+    out.sort((a, b) =>
+      (order[a.flow && a.flow.key] ?? 3) - (order[b.flow && b.flow.key] ?? 3) ||
+      ((b.match && b.match.total) || 0) - ((a.match && a.match.total) || 0));
+
+    res.json({ friends: out, needsBirth: !myChart });
+  } catch (err) {
+    console.error("friends list error:", err);
+    res.status(500).json({ error: "Could not load your constellation." });
   }
 });
 

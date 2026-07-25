@@ -21,6 +21,7 @@ const fromUserRow = r => (r ? {
   phoneVerified: r.phone_verified ?? r.phoneVerified ?? false,
   soulId: r.soul_id ?? r.soulId ?? null,
   soulIdAt: r.soul_id_at ?? r.soulIdAt ?? null,
+  birthRole: r.birth_role ?? r.birthRole ?? null,
   createdAt: r.created_at ?? r.createdAt ?? null
 } : r);
 
@@ -83,6 +84,7 @@ function supabaseBackend(url, key) {
           google_id: user.googleId || null, salt: user.salt || null, hash: user.hash || null,
           phone: user.phone || null, phone_verified: !!user.phoneVerified,
           soul_id: user.soulId || null, soul_id_at: user.soulIdAt || null,
+          birth: user.birth || null, birth_role: user.birthRole || null,
           created_at: user.createdAt
         });
         if (error) throw error;
@@ -98,6 +100,8 @@ function supabaseBackend(url, key) {
         if (patch.phoneVerified !== undefined) upd.phone_verified = patch.phoneVerified;
         if (patch.soulId !== undefined) upd.soul_id = patch.soulId;
         if (patch.soulIdAt !== undefined) upd.soul_id_at = patch.soulIdAt;
+        if (patch.birth !== undefined) upd.birth = patch.birth;
+        if (patch.birthRole !== undefined) upd.birth_role = patch.birthRole;
         const { error } = await sb.from("users").update(upd).eq("id", id);
         if (error) throw error;
         return true;
