@@ -214,6 +214,10 @@ app.get("/terms", page("terms.html"));
 // --- Auth gate --------------------------------------------------------------
 // API responses are dynamic and auth-sensitive — never cache them (this also
 // avoids 304 Not Modified responses, which carry no body for the client to read).
+// The Capacitor webview calls the API cross-origin, so it needs CORS. Bearer
+// only — no credentials — see auth.appCors.
+app.use("/api", auth.appCors);
+
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
@@ -311,9 +315,14 @@ app.post("/api/auth/phone/register", auth.rateLimit, async (req, res) => {
       createdAt: new Date().toISOString()
     });
     const soulId = await ensureSoulId(user);
-    auth.setSessionCookie(res, auth.makeSessionToken(user.id));
+    const token = auth.makeSessionToken(user.id);
+    auth.setSessionCookie(res, token);
     const connected = await linkPendingInvite(req, res, user.id);
-    res.json({ user: { ...publicUser(user), soulId, phone: phoneLib.mask(p) }, connectedTo: connected ? true : undefined });
+    res.json({
+      user: { ...publicUser(user), soulId, phone: phoneLib.mask(p) },
+      connectedTo: connected ? true : undefined,
+      token: auth.wantsToken(req) ? token : undefined
+    });
   } catch (err) {
     console.error("phone register error:", err);
     res.status(500).json({ error: "Registration failed." });
@@ -395,9 +404,14 @@ app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
     if (await users.findByEmail(e)) return res.status(409).json({ error: "That email is already registered." });
     const { salt, hash } = await auth.hashPassword(password);
     const user = await users.add({ id: crypto.randomUUID(), email: e, salt, hash, createdAt: new Date().toISOString() });
-    auth.setSessionCookie(res, auth.makeSessionToken(user.id));
+    const token = auth.makeSessionToken(user.id);
+    auth.setSessionCookie(res, token);
     const connected = await linkPendingInvite(req, res, user.id);
-    res.json({ user: publicUser(user), connectedTo: connected ? true : undefined });
+    res.json({
+      user: publicUser(user),
+      connectedTo: connected ? true : undefined,
+      token: auth.wantsToken(req) ? token : undefined
+    });
   } catch (err) {
     console.error("register error:", err);
     res.status(500).json({ error: "Registration failed." });
@@ -419,8 +433,9 @@ app.post("/api/auth/login", auth.rateLimit, async (req, res) => {
     // user.hash is null for Google-only accounts → password login is refused.
     const ok = user && user.hash && (await auth.verifyPassword(String(b.password || ""), user.salt, user.hash));
     if (!ok) return res.status(401).json({ error: "Invalid login or password." });
-    auth.setSessionCookie(res, auth.makeSessionToken(user.id));
-    res.json({ user: publicUser(user) });
+    const token = auth.makeSessionToken(user.id);
+    auth.setSessionCookie(res, token);
+    res.json({ user: publicUser(user), token: auth.wantsToken(req) ? token : undefined });
   } catch (err) {
     console.error("login error:", err);
     res.status(500).json({ error: "Login failed." });

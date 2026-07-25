@@ -95,9 +95,34 @@ function parseCookies(req) {
   }
   return out;
 }
+// --- Two ways to present a session -------------------------------------------
+// Browsers send the httpOnly cookie. The Capacitor app can't: its webview runs
+// on capacitor://localhost while the API is on the real domain, so the cookie is
+// third-party and gets dropped. Same signed token, carried in a header instead.
+//
+// This split matters for CSRF. A cookie is attached by the browser
+// automatically, which is what makes cross-site requests dangerous. An
+// Authorization header never is — a hostile page cannot make the browser add
+// one — so bearer-authenticated requests are structurally immune, and the
+// origin check below skips them rather than blocking the app.
+function bearerToken(req) {
+  const h = String((req.headers && req.headers.authorization) || "");
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1].trim() : null;
+}
+
+/** True when this request authenticated by header rather than cookie. */
+function usedBearer(req) {
+  const t = bearerToken(req);
+  return !!(t && verify(t));
+}
+
 const currentUserId = req => {
-  const data = verify(parseCookies(req)[COOKIE]);
-  return data ? data.uid : null;
+  // Cookie first: a browser session shouldn't be overridden by a stray header.
+  const fromCookie = verify(parseCookies(req)[COOKIE]);
+  if (fromCookie) return fromCookie.uid;
+  const fromHeader = verify(bearerToken(req));
+  return fromHeader ? fromHeader.uid : null;
 };
 
 // --- Middleware -------------------------------------------------------------
@@ -107,6 +132,18 @@ function requireAuth(req, res, next) {
   req.userId = uid;
   next();
 }
+
+// --- Native app (Capacitor) ---------------------------------------------------
+// The webview serves the bundled frontend from these origins, so API calls from
+// the app are cross-origin and need CORS. Credentials are deliberately NOT
+// allowed: the app authenticates with a bearer token, and permitting cookies
+// here would re-open the CSRF surface the header approach closes.
+const APP_ORIGINS = new Set([
+  "capacitor://localhost",  // iOS
+  "http://localhost",       // Android
+  "https://localhost",      // Android, when configured for https scheme
+  "ionic://localhost"       // older Capacitor/Cordova shells
+]);
 
 // Reject cross-origin state-changing requests (CSRF defence-in-depth; the
 // SameSite=Lax cookie already blocks most). GET/HEAD are exempt.
@@ -118,6 +155,15 @@ const CANONICAL_HOST = (process.env.CANONICAL_HOST || "").trim().toLowerCase();
 
 function checkOrigin(req, res, next) {
   if (req.method === "GET" || req.method === "HEAD") return next();
+  // Bearer-authenticated requests carry no ambient credential, so there's
+  // nothing for a hostile origin to ride on — and the native app's origin is
+  // never going to match the site's host.
+  if (usedBearer(req)) return next();
+  // Signing in is the one request the app makes before it has a token, so the
+  // native webview origins are allowed outright. That isn't a CSRF hole: a
+  // browser sets Origin itself and will never claim capacitor://localhost from
+  // a web page, and these origins carry no cookie to ride on.
+  if (req.headers.origin && APP_ORIGINS.has(req.headers.origin)) return next();
   const origin = req.headers.origin;
   if (origin) {
     const allowed = CANONICAL_HOST
@@ -132,6 +178,37 @@ function checkOrigin(req, res, next) {
     }
   }
   next();
+}
+
+function appCors(req, res, next) {
+  const origin = req.headers.origin;
+  if (origin && APP_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Pythia-Client");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Max-Age", "86400");
+    // No Access-Control-Allow-Credentials: bearer only, by design.
+    if (req.method === "OPTIONS") return res.status(204).end();
+  }
+  next();
+}
+
+/**
+ * Should this response hand back the session token in its body?
+ *
+ * Only for the native app, which has no usable cookie and must store the token
+ * itself. Browsers keep getting the httpOnly cookie and nothing else: putting a
+ * long-lived credential where page JavaScript can read it would let an XSS
+ * exfiltrate a session that outlives the page, which is strictly worse than the
+ * request-forgery an XSS can already manage.
+ *
+ * A hostile script could of course set this header too. The header is a
+ * declaration of intent, not a security boundary — the real boundary is that we
+ * never volunteer the token by default.
+ */
+function wantsToken(req) {
+  return String((req.headers && req.headers["x-pythia-client"]) || "").toLowerCase() === "app";
 }
 
 // --- Client IP ---------------------------------------------------------------
@@ -222,5 +299,5 @@ module.exports = {
   hashPassword, verifyPassword, makeSessionToken,
   setSessionCookie, clearSessionCookie, setCookie, clearCookie, parseCookies, currentUserId,
   requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE,
-  clientIp, TRUST_CLOUDFLARE
+  clientIp, TRUST_CLOUDFLARE, bearerToken, usedBearer, APP_ORIGINS, appCors, wantsToken
 };
