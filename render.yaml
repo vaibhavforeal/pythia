@@ -35,3 +35,36 @@ services:
       - key: GOOGLE_REDIRECT_URI
         sync: false          # optional — pin to https://pythia.cyou/api/auth/google/callback
                              # once CANONICAL_HOST is set; otherwise it's derived from the host
+      # --- Daily push (optional) — leave unset to disable notifications -------
+      # Without CRON_SECRET the cron endpoint returns 503 and nothing is sent.
+      - key: CRON_SECRET
+        generateValue: true  # must match the cron job below; Render syncs it via fromService
+      - key: PUSH_PROVIDER
+        value: fcm
+      - key: PUSH_HOUR_LOCAL
+        value: "8"           # local hour to send at; 0 (midnight) is valid
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false          # the service-account JSON, inline (keep secret)
+
+  # The daily notification is driven entirely by this job — the app has no
+  # in-process scheduler, so without it POST /api/cron/daily-push is never
+  # called and the whole feature is silently dead however it's configured.
+  # Hourly, because each user is sent at *their* local PUSH_HOUR_LOCAL and the
+  # handler skips anyone whose local hour hasn't come round yet.
+  - type: cron
+    name: astroman-daily-push
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "0 * * * *"
+    dockerCommand: >-
+      node -e "fetch(process.env.PUSH_URL,{method:'POST',headers:{'x-cron-secret':process.env.CRON_SECRET}})
+      .then(async r=>{console.log(r.status,await r.text());process.exit(r.ok?0:1)})
+      .catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: PUSH_URL
+        sync: false          # https://<your-host>/api/cron/daily-push
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: astroman
+          envVarKey: CRON_SECRET

@@ -36,6 +36,15 @@ const fromInviteRow = r => ({
   role: r.role, createdAt: r.created_at, expiresAt: r.expires_at
 });
 
+// people.forUser used to return the raw row here and the stored camelCase
+// object on the JSON backend, so `person.userId` was defined in dev and
+// undefined in production. Normalising means one shape whichever backend runs.
+const fromPersonRow = r => ({
+  id: r.id, userId: r.user_id, name: r.name,
+  year: r.year, month: r.month, day: r.day, hour: r.hour, minute: r.minute,
+  lat: r.lat, lon: r.lon, tz: r.tz, createdAt: r.created_at
+});
+
 // --- Supabase Postgres backend ----------------------------------------------
 function supabaseBackend(url, key) {
   if (!/^https?:\/\//i.test(url)) {
@@ -154,6 +163,14 @@ function supabaseBackend(url, key) {
         if (error) throw error;
         return (data || []).map(fromDeviceRow);
       },
+      // Token is the primary key, so this finds the row `put` would overwrite —
+      // whoever currently owns it. Callers need that to tell a re-registration
+      // apart from a takeover.
+      async byToken(token) {
+        const { data, error } = await sb.from("devices").select("*").eq("token", token).maybeSingle();
+        if (error) throw error;
+        return data ? fromDeviceRow(data) : undefined;
+      },
       async put(d) {
         const { error } = await sb.from("devices").upsert({
           token: d.token, user_id: d.userId, platform: d.platform || null,
@@ -209,9 +226,14 @@ function supabaseBackend(url, key) {
         return data ? { pairKey: data.pair_key, userA: data.user_a, userB: data.user_b, createdAt: data.created_at } : undefined;
       },
       async add(f) {
-        const { error } = await sb.from("friendships").insert({
+        // Idempotent: two concurrent accepts of the same request (a double
+        // click) both reach here. A plain insert violated the pair_key primary
+        // key and 500'd, while the JSON path silently overwrote the row and
+        // reset createdAt. Keeping the existing row is right on both counts —
+        // the friendship already exists, and "since" shouldn't jump to now.
+        const { error } = await sb.from("friendships").upsert({
           pair_key: f.pairKey, user_a: f.userA, user_b: f.userB, created_at: f.createdAt
-        });
+        }, { onConflict: "pair_key", ignoreDuplicates: true });
         if (error) throw error;
         return f;
       },
@@ -226,10 +248,11 @@ function supabaseBackend(url, key) {
         return data ? { id: data.id, pairKey: data.pair_key, from: data.from_user, to: data.to_user, source: data.source, createdAt: data.created_at } : undefined;
       },
       async addRequest(r) {
-        const { error } = await sb.from("friend_requests").insert({
+        // Idempotent for the same reason as add() above — pair_key is unique.
+        const { error } = await sb.from("friend_requests").upsert({
           id: r.id, pair_key: r.pairKey, from_user: r.from, to_user: r.to,
           source: r.source || null, created_at: r.createdAt
-        });
+        }, { onConflict: "pair_key", ignoreDuplicates: true });
         if (error) throw error;
         return r;
       },
@@ -317,7 +340,7 @@ function supabaseBackend(url, key) {
       async forUser(userId) {
         const { data, error } = await sb.from("people").select("*").eq("user_id", userId).order("name");
         if (error) throw error;
-        return data || [];
+        return (data || []).map(fromPersonRow);
       },
       async add(person) {
         const { error } = await sb.from("people").insert({
@@ -394,7 +417,27 @@ function jsonBackend() {
     if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
   }
 
-  const read = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return []; } };
+  // Every mutation here is a full-file rewrite, so "read failed" must never be
+  // reported as "the file is empty" — the next write would persist that empty
+  // array and destroy the file. A genuinely absent file is empty; anything else
+  // (unreadable, truncated, not an array) throws and surfaces as a 500.
+  const read = f => {
+    let raw;
+    try {
+      raw = fs.readFileSync(f, "utf8");
+    } catch (err) {
+      if (err.code === "ENOENT") return [];
+      throw new Error(`store: cannot read ${path.basename(f)}: ${err.message}`);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`store: ${path.basename(f)} is not valid JSON: ${err.message}`);
+    }
+    if (!Array.isArray(parsed)) throw new Error(`store: ${path.basename(f)} is not an array`);
+    return parsed;
+  };
   const write = (f, d) => { const t = `${f}.tmp`; fs.writeFileSync(t, JSON.stringify(d, null, 2)); fs.renameSync(t, f); };
 
   return {
@@ -462,6 +505,9 @@ function jsonBackend() {
       async all() {
         return read(DEVICES);
       },
+      async byToken(token) {
+        return read(DEVICES).find(d => d.token === token);
+      },
       async put(d) {
         const all = read(DEVICES).filter(x => x.token !== d.token);
         all.push(d);
@@ -497,7 +543,11 @@ function jsonBackend() {
         return read(FRIENDS).find(f => f.pairKey === pairKey);
       },
       async add(f) {
-        const all = read(FRIENDS).filter(x => x.pairKey !== f.pairKey);
+        // Matches the Supabase upsert's ignoreDuplicates: an existing
+        // friendship keeps its original createdAt rather than jumping to now.
+        const all = read(FRIENDS);
+        const existing = all.find(x => x.pairKey === f.pairKey);
+        if (existing) return existing;
         all.push(f);
         write(FRIENDS, all);
         return f;
@@ -510,7 +560,10 @@ function jsonBackend() {
         return read(FRIEND_REQ).find(r => r.pairKey === pairKey);
       },
       async addRequest(r) {
-        const all = read(FRIEND_REQ).filter(x => x.pairKey !== r.pairKey);
+        // Idempotent, matching the Supabase path.
+        const all = read(FRIEND_REQ);
+        const existing = all.find(x => x.pairKey === r.pairKey);
+        if (existing) return existing;
         all.push(r);
         write(FRIEND_REQ, all);
         return r;
@@ -520,9 +573,13 @@ function jsonBackend() {
         return true;
       },
       async requestsTo(userId) {
+        // Same 50 cap as the Supabase path. GET /api/friends/requests computes
+        // a full chart per row in a sequential loop, so an uncapped list turns
+        // "lots of pending requests" into an unbounded-work request.
         return read(FRIEND_REQ)
           .filter(r => r.to === userId)
-          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+          .slice(0, 50);
       },
       async blocksFor(userId) {
         return read(BLOCKS).filter(b => b.blocker === userId || b.blocked === userId);

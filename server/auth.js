@@ -91,7 +91,18 @@ function parseCookies(req) {
   for (const part of header.split(";")) {
     const i = part.indexOf("=");
     if (i < 0) continue;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const raw = part.slice(i + 1).trim();
+    let value;
+    // A malformed percent-escape makes decodeURIComponent throw. That cookie is
+    // simply not one of ours, and a browser can hold one it never sent us (a
+    // sibling subdomain, a third-party script) — throwing here would 500 every
+    // authenticated route for that user until they cleared cookies by hand.
+    try {
+      value = decodeURIComponent(raw);
+    } catch {
+      value = raw;
+    }
+    out[part.slice(0, i).trim()] = value;
   }
   return out;
 }
@@ -186,7 +197,10 @@ function appCors(req, res, next) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Pythia-Client");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    // PATCH is required: saveConversation() uses it, and the Authorization
+    // header forces a preflight, so omitting it made every autosave after the
+    // first message fail silently in the native shell.
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Max-Age", "86400");
     // No Access-Control-Allow-Credentials: bearer only, by design.
     if (req.method === "OPTIONS") return res.status(204).end();

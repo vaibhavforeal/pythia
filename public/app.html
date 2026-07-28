@@ -19,7 +19,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
     <link rel="stylesheet" href="styles.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Served from our own origin, at a version pinned in package.json. The
+         CDN URL this replaces floated to latest with no SRI, so a third party
+         could change what executes here — and in the native shell that runs
+         alongside a bearer token in localStorage. purify sanitizes model output
+         before it reaches innerHTML; marked v5+ removed its own sanitizer. -->
+    <script src="vendor/marked.umd.js"></script>
+    <script src="vendor/purify.min.js"></script>
   </head>
   <body>
     <div class="app">

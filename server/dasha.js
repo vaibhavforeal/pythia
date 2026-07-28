@@ -28,9 +28,10 @@ const NAKSHATRAS = [
 const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000; // Vimshottari solar-ish year
 const NAK_LEN = 360 / 27; // 13°20'
 
-function isoDate(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
-}
+// Dasha period dates are read by people (chart card, and the text handed to
+// Claude), so they use the app-wide DD-MM-YYYY format. Kept as a named import
+// rather than a local copy so the format lives in exactly one place.
+const { formatDay: isoDate } = require("./dates");
 
 function humanYears(years) {
   const totalMonths = Math.round(years * 12);

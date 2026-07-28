@@ -206,7 +206,12 @@ form.addEventListener("submit", async e => {
 // read from myBirth, not lastInput, so minting while viewing someone else's
 // chart can't send their details out into the world.
 function inviteUrl(token) {
-  return `${location.origin}/i/${token}`;
+  // In the native shell location.origin is the webview's own origin
+  // (https://localhost / capacitor://localhost), so a link built from it is
+  // dead the moment it's shared. PythiaAuth.apiBase is the real server origin
+  // there, and "" on the web, where a same-origin link is correct.
+  const base = (window.PythiaAuth && window.PythiaAuth.apiBase) || location.origin;
+  return `${base}/i/${token}`;
 }
 
 async function createInvite() {
@@ -967,7 +972,8 @@ function renderEraCard(c) {
   const sub = d.antar
     ? `<span class="vc-sub">right now: <b>${d.antar.lord}</b> sub-vibe${antar ? " — " + antar.head : ""}</span>`
     : "";
-  const yr = s => (s || "").slice(0, 4);
+  // Dates arrive as DD-MM-YYYY, so the year is the LAST field, not the first.
+  const yr = s => (s || "").slice(-4);
   return `
     <div class="vibe-card vc-era">
       <div class="vc-emoji vc-era-glyph">${PLANET_GLYPH[d.maha.lord] || "✦"}</div>
@@ -1758,8 +1764,33 @@ function addMessage(role, text) {
   return body;
 }
 
+// Model output is not trusted input. It can carry HTML (marked passes raw HTML
+// through by design since v5), it can echo attacker-chosen text such as a
+// friend's display name, and it is replayed through this same sink every time a
+// saved conversation is reopened — so an injection here is stored, not
+// reflected. Sanitize before it reaches innerHTML.
+function sanitizeHtml(html) {
+  if (window.DOMPurify) {
+    return DOMPurify.sanitize(html, {
+      USE_PROFILES: { html: true },
+      // The default profile keeps `style`, which leaves attacker-controlled CSS
+      // in place — enough to overlay the UI with a fake prompt. Markdown never
+      // needs it. Form controls are forbidden for the same reason: marked can't
+      // emit them, so their only source would be injected markup.
+      FORBID_ATTR: ["style"],
+      FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "option"]
+    });
+  }
+  // No sanitizer available: show the markup as text rather than execute it.
+  const d = document.createElement("div");
+  d.textContent = html;
+  return d.innerHTML;
+}
+
 function renderMarkdown(el, text) {
-  el.innerHTML = window.marked ? marked.parse(text) : text.replace(/\n/g, "<br>");
+  el.innerHTML = window.marked
+    ? sanitizeHtml(marked.parse(text))
+    : sanitizeHtml(text).replace(/\n/g, "<br>");
 }
 
 function scrollDown() {
@@ -1905,12 +1936,15 @@ function onAuthed(user) {
 // because "today" has to mean today where the user is (see server/streak.js).
 async function checkInStreak() {
   const d = new Date();
-  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
   try {
     const res = await fetch("/api/streak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: today })
+      // getTimezoneOffset is minutes BEHIND local, so negate it — same
+      // convention as push-client.js. The server derives the local date from
+      // this; `date` is kept only for older clients.
+      body: JSON.stringify({ date: today, tzOffsetMinutes: -d.getTimezoneOffset() })
     });
     // The streak is decoration — a failure must never block the app. But it
     // must not fail *silently* either, or a broken endpoint is indistinguishable
@@ -2045,7 +2079,11 @@ const AUTH_ERRORS = {
 function checkAuthError() {
   const code = new URLSearchParams(location.search).get("auth_error");
   if (!code) return;
-  history.replaceState(null, "", location.pathname); // strip it from the URL
+  // window.history, not the module-level `history` array declared at the top of
+  // this file — a bare `history` resolves to that array and throws, which would
+  // abort the rest of this script (loadProviders/initAuth never run, leaving the
+  // login overlay stuck up with no way to retry).
+  window.history.replaceState(null, "", location.pathname); // strip it from the URL
   pendingAuthError = AUTH_ERRORS[code] || "Sign-in failed — please try again.";
 }
 

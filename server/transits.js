@@ -29,7 +29,10 @@ const TRANSIT_PLANETS = [
 
 const norm360 = x => ((x % 360) + 360) % 360;
 const jdFromMs = ms => 2440587.5 + ms / DAY_MS;
-const iso = ms => new Date(ms).toISOString().slice(0, 10);
+// Sade Sati window dates are user-facing (and go into the prompt), so they use
+// the app-wide DD-MM-YYYY format. Never compare these as strings — the window
+// comparisons in this file all work on epoch ms, deliberately.
+const { formatDay: iso } = require("./dates");
 
 function planetLon(jd, id) {
   return norm360(sweph.calc_ut(jd, id, FLAGS).data[0]);
@@ -99,10 +102,19 @@ function computeSadeSati(moonSign, nowMs) {
   }
   if (cur) runs.push(cur);
 
+  // Gaps in a Sade Sati passage come in exactly two sizes, so the threshold
+  // between them is not a tuned constant. A retrograde loop at a sign boundary
+  // takes Saturn out of the three signs for at most ~8 months (measured: up to
+  // 238 days). Between two genuine passages Saturn must cross the other nine
+  // signs — about 29.5 − 7.4 ≈ 22 years. Anything in between cannot occur, so
+  // 2 years sits ~3x above the largest wobble and ~11x below the real gap.
+  // The old 160-day value was *below* the wobble, which split real passages in
+  // two and left the leading fragment to be reported as the whole window.
+  const MERGE_GAP_MS = 2 * 365.25 * DAY_MS;
   const merged = [];
   for (const r of runs) {
     const last = merged[merged.length - 1];
-    if (last && r.startMs - last.endMs <= 160 * DAY_MS) last.endMs = r.endMs;
+    if (last && r.startMs - last.endMs <= MERGE_GAP_MS) last.endMs = r.endMs;
     else merged.push({ ...r });
   }
 
@@ -132,18 +144,40 @@ function computeSadeSati(moonSign, nowMs) {
   const peak = refineFirst(start, end, s => s === moonSign);
   const setting = refineFirst(peak, end, s => s === (moonSign + 1) % 12);
 
+  // Saturn can sit inside the merged window while briefly retrograde out of the
+  // three signs (that is exactly what the gaps above are). The house-based
+  // branches only cover 12/1/2, so without the timeline fallback anything else
+  // fell through to "setting" — producing a label that contradicted the
+  // houseFromMoon reported alongside it.
+  const satInSet = inSet(saturnSign);
   const phase = !active
     ? null
     : houseFromMoon === 12
     ? "rising"
     : houseFromMoon === 1
     ? "peak"
+    : houseFromMoon === 2
+    ? "setting"
+    : nowMs < peak
+    ? "rising"
+    : nowMs < setting
+    ? "peak"
     : "setting";
-  const phaseLabel = {
+  const PHASE_IN_SET = {
     rising: "Rising phase — Saturn in the 12th from your Moon",
     peak: "Peak phase — Saturn transiting over your natal Moon",
     setting: "Setting phase — Saturn in the 2nd from your Moon"
-  }[phase] || null;
+  };
+  // Don't assert a house Saturn isn't in. Deliberately direction-neutral: the
+  // gap is as often a forward exit that retrogrades back in as a backward one,
+  // so "stepped back out" would be wrong half the time. Saturn always returns
+  // here — the window only spans this gap because a later run re-enters.
+  const PHASE_OUT_OF_SET = {
+    rising: "Rising phase — Saturn is briefly outside the 12th, and returns to it shortly",
+    peak: "Peak phase — Saturn is briefly off your natal Moon, and returns to it shortly",
+    setting: "Setting phase — Saturn is briefly outside the 2nd, and returns to it shortly"
+  };
+  const phaseLabel = !phase ? null : (satInSet ? PHASE_IN_SET : PHASE_OUT_OF_SET)[phase];
 
   return {
     active,

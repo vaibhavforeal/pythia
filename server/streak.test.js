@@ -83,7 +83,42 @@ test("plausibleToday accepts any real timezone and nothing else", () => {
 
 test("plausibleToday rejects malformed and impossible dates", () => {
   const NOW = Date.UTC(2026, 6, 25, 12, 0, 0);
-  for (const bad of ["", "25-07-2026", "2026-7-5", "2026-02-31", "2026-13-01", "2026-07-25' or 1=1", null]) {
+  // "25-07-2026" is no longer here: DD-MM-YYYY is now the canonical format.
+  for (const bad of ["", "2026-7-5", "31-02-2026", "2026-02-31", "2026-13-01",
+    "01-13-2026", "25-07-2026' or 1=1", "5-7-2026", null]) {
     assert.strictEqual(streak.plausibleToday(bad, NOW), false, `should reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test("DD-MM-YYYY is the canonical format, and legacy ISO still reads", () => {
+  const NOW = Date.UTC(2026, 6, 25, 12, 0, 0);
+  assert.strictEqual(streak.plausibleToday("25-07-2026", NOW), true);
+  assert.strictEqual(streak.plausibleToday("26-07-2026", NOW), true, "UTC+14 is a day ahead");
+  assert.strictEqual(streak.plausibleToday("24-07-2026", NOW), true, "UTC-12 is a day behind");
+  assert.strictEqual(streak.plausibleToday("27-07-2026", NOW), false);
+  // Rows written before the format change must keep working.
+  assert.strictEqual(streak.plausibleToday("2026-07-25", NOW), true, "legacy ISO still accepted");
+  assert.strictEqual(streak.daysBetween("2026-07-24", "25-07-2026"), 1, "mixed formats compare correctly");
+
+  // A stored legacy date and today's new-format date are the SAME day; a
+  // string comparison would miss that and count the day twice.
+  const prev = { current: 5, longest: 9, last: "2026-07-25", days: 21 };
+  assert.strictEqual(streak.advance(prev, "25-07-2026").changed, false, "same day across formats");
+  assert.strictEqual(streak.advance(prev, "26-07-2026").current, 6, "next day still continues the run");
+});
+
+test("localDay pins the date to the client's offset, so it can't be walked", () => {
+  const NOW = Date.UTC(2026, 6, 25, 12, 0, 0);
+  assert.strictEqual(streak.localDay(0, NOW), "25-07-2026");
+  assert.strictEqual(streak.localDay(330, NOW), "25-07-2026", "India +5:30");
+  assert.strictEqual(streak.localDay(14 * 60, NOW), "26-07-2026", "UTC+14 is already tomorrow");
+  assert.strictEqual(streak.localDay(-12 * 60, NOW), "25-07-2026");
+  assert.strictEqual(streak.localDay(-12 * 60, Date.UTC(2026, 6, 25, 6, 0)), "24-07-2026");
+
+  assert.strictEqual(streak.isValidOffset(330), true);
+  assert.strictEqual(streak.isValidOffset(-12 * 60), true);
+  assert.strictEqual(streak.isValidOffset(14 * 60), true);
+  for (const bad of [15 * 60, -13 * 60, NaN, "abc", null, undefined, Infinity]) {
+    assert.strictEqual(streak.isValidOffset(bad), false, `should reject ${JSON.stringify(bad)}`);
   }
 });

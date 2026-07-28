@@ -5,3 +5,18 @@ server/data
 .gitignore
 *.log
 _*
+
+# Secrets and client config must not be baked into an image layer.
+google-services.json
+GoogleService-Info.plist
+*-service-account*.json
+serviceAccountKey*.json
+
+# Not needed at runtime, and the generated images are megabytes each.
+# NOTE: do not exclude *.md — server/skill.js reads "Vedic Astrology Skill.md"
+# at boot with readFileSync, so dropping it crashes the container on start.
+mobile
+supabase
+design-system
+Gemini_Generated_Image_*.png
+README.md

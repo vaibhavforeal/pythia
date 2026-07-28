@@ -566,6 +566,11 @@ button {
 .form-toggle:hover { border-color: var(--sky); background: var(--sky-soft); }
 .ft-caret { color: var(--muted); font-size: 11px; }
 
+.cid-top {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
 .cid-top .cid-head { margin: 0; }
 .cid-elem {
   flex: 0 0 auto;
