@@ -2,9 +2,10 @@
 // throwaway DATA_DIR (JSON backend), so this covers the route, the auth gate
 // and the store round trip together. Run with `npm test`.
 //
-// Note: the ±1-day plausibility guard means the clock can't be walked forward
-// through the API, so multi-day runs are set up by seeding users.json and then
-// checking in — which is also what actually happens between real sessions.
+// Note: the endpoint derives "today" from the client's tzOffsetMinutes and
+// ignores any claimed date, so the clock cannot be walked forward through the
+// API at all. Multi-day runs are therefore set up by seeding users.json and
+// then checking in — which is also what happens between real sessions.
 const test = require("node:test");
 const assert = require("node:assert");
 const { spawn } = require("node:child_process");
@@ -39,10 +40,17 @@ async function api(method, url, body) {
   return { status: res.status, json };
 }
 
-// Anchor on the server's UTC date so "today" is plausible whatever hour the
-// suite runs at (a local-midnight anchor makes today+1 a ±2 jump).
-const utcDay = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+// The endpoint derives "today" from tzOffsetMinutes, so the tests run at UTC
+// (offset 0) and anchor on the server's UTC date. Dates are DD-MM-YYYY.
+const OFFSET = 0;
+const utcDay = n => {
+  const d = new Date(Date.now() + n * 86400000);
+  const p = x => String(x).padStart(2, "0");
+  return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
+};
 const TODAY = utcDay(0);
+// Every check-in must carry the offset; the date is no longer client-chosen.
+const checkIn = (extra = {}) => ({ tzOffsetMinutes: OFFSET, ...extra });
 
 const readUser = () => JSON.parse(fs.readFileSync(USERS, "utf8"))[0];
 function seedStreak(s) {
@@ -76,7 +84,7 @@ test.after(() => {
 });
 
 test("rejects anonymous check-ins", async () => {
-  const r = await api("POST", "/api/streak", { date: TODAY });
+  const r = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(r.status, 401);
 });
 
@@ -89,21 +97,21 @@ test("registers a user for the rest of the suite", async () => {
 });
 
 test("first check-in returns a streak of 1", async () => {
-  const { json } = await api("POST", "/api/streak", { date: TODAY });
+  const { json } = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(json.current, 1);
   assert.strictEqual(json.isNewDay, true);
   assert.strictEqual(json.nextMilestone, 3);
 });
 
 test("a second check-in the same day is idempotent", async () => {
-  const { json } = await api("POST", "/api/streak", { date: TODAY });
+  const { json } = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(json.current, 1);
   assert.strictEqual(json.isNewDay, false);
 });
 
 test("checking in the day after continues the run and persists", async () => {
   seedStreak({ current: 4, longest: 9, last: utcDay(-1), days: 20 });
-  const { json } = await api("POST", "/api/streak", { date: TODAY });
+  const { json } = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(json.current, 5);
   assert.strictEqual(json.longest, 9, "an ongoing run shouldn't touch the record");
   assert.strictEqual(json.days, 21);
@@ -113,32 +121,52 @@ test("checking in the day after continues the run and persists", async () => {
 
 test("a gap resets the run but keeps the record", async () => {
   seedStreak({ current: 30, longest: 30, last: utcDay(-3), days: 60 });
-  const { json } = await api("POST", "/api/streak", { date: TODAY });
+  const { json } = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(json.current, 1);
   assert.strictEqual(json.longest, 30);
 });
 
 test("beating the record raises longest and flags the milestone", async () => {
   seedStreak({ current: 6, longest: 6, last: utcDay(-1), days: 10 });
-  const { json } = await api("POST", "/api/streak", { date: TODAY });
+  const { json } = await api("POST", "/api/streak", checkIn());
   assert.strictEqual(json.current, 7);
   assert.strictEqual(json.longest, 7);
   assert.strictEqual(json.milestone, true);
   assert.strictEqual(json.nextMilestone, 14);
 });
 
-test("backdating cannot clobber a later check-in", async () => {
-  const { json } = await api("POST", "/api/streak", { date: utcDay(-1) });
-  assert.strictEqual(json.current, 7);
-  assert.strictEqual(json.isNewDay, false);
+test("a forged date field is ignored entirely", async () => {
+  const before = readUser().streak.current;
+  // Every one of these would previously have moved the streak; the date is now
+  // derived from the offset, so the field is inert whatever it says.
+  for (const date of [utcDay(1), utcDay(-1), utcDay(3), "yesterday", "31-02-2026"]) {
+    const { status, json } = await api("POST", "/api/streak", checkIn({ date }));
+    assert.strictEqual(status, 200, `offset is valid, so ${JSON.stringify(date)} should not 400`);
+    assert.strictEqual(json.isNewDay, false, `${JSON.stringify(date)} must not count as a new day`);
+    assert.strictEqual(json.current, before, `${JSON.stringify(date)} must not move the streak`);
+  }
   assert.strictEqual(readUser().streak.last, TODAY);
 });
 
-test("implausible and malformed dates are rejected without touching the store", async () => {
+test("the walk-forward forgery is dead: three claims in one sitting stay at one day", async () => {
+  seedStreak({ current: 0, longest: 0, last: null, days: 0 });
+  // The old exploit: post D-1, then D, then D+1 without waiting a real day.
+  const runs = [];
+  for (const date of [utcDay(-1), utcDay(0), utcDay(1)]) {
+    runs.push((await api("POST", "/api/streak", checkIn({ date }))).json);
+  }
+  assert.strictEqual(runs[0].current, 1, "the first check-in counts");
+  assert.strictEqual(runs[1].current, 1, "the second must not advance");
+  assert.strictEqual(runs[2].current, 1, "nor the third");
+  assert.strictEqual(runs[2].milestone, false, "the 3-day milestone must not fire");
+});
+
+test("a missing or invalid offset is refused without touching the store", async () => {
   const before = readUser().streak.current;
-  for (const date of [utcDay(3), utcDay(-3), "yesterday", "2026-02-31", undefined]) {
-    const r = await api("POST", "/api/streak", date === undefined ? {} : { date });
-    assert.strictEqual(r.status, 400, `should reject ${JSON.stringify(date)}`);
+  for (const off of [undefined, null, "330", 15 * 60, -13 * 60, NaN, {}]) {
+    const body = off === undefined ? { date: TODAY } : { date: TODAY, tzOffsetMinutes: off };
+    const r = await api("POST", "/api/streak", body);
+    assert.strictEqual(r.status, 400, `should reject offset ${JSON.stringify(off)}`);
   }
   assert.strictEqual(readUser().streak.current, before);
 });

@@ -21,7 +21,17 @@ const MAX_SENDS_PER_DAY = 8;        // per phone number
 
 // Codes are hashed with a server secret; falls back to the session secret so a
 // deployment that only sets SESSION_SECRET still stores hashes, not plaintext.
-const SECRET = process.env.OTP_SECRET || process.env.SESSION_SECRET || "";
+// With neither set we generate a random one rather than using a constant: a
+// literal baked into the source is public, which would make the stored hash
+// plaintext-equivalent (10^6 offline HMACs recovers every pending code) and
+// defeat the first rule above. Pending codes then don't survive a restart —
+// the same trade-off auth.js makes for sessions, and they only live 10 minutes.
+let SECRET = process.env.OTP_SECRET || process.env.SESSION_SECRET || "";
+let ephemeralSecret = false;
+if (!SECRET) {
+  SECRET = crypto.randomBytes(32).toString("hex");
+  ephemeralSecret = true;
+}
 
 /** Uniform 6-digit code, zero-padded, from a CSPRNG. */
 function generateCode() {
@@ -30,7 +40,7 @@ function generateCode() {
 
 /** Hash bound to the phone number, so a code for one number can't verify another. */
 function hashCode(code, phone) {
-  return crypto.createHmac("sha256", SECRET || "pythia-otp").update(`${phone}:${code}`).digest("hex");
+  return crypto.createHmac("sha256", SECRET).update(`${phone}:${code}`).digest("hex");
 }
 
 function timingSafeEqual(a, b) {
@@ -123,6 +133,6 @@ const REASON_MESSAGE = {
 
 module.exports = {
   generateCode, hashCode, newRecord, resendRecord, sendBlockedReason, verify,
-  isExpired, REASON_MESSAGE,
+  isExpired, REASON_MESSAGE, ephemeralSecret,
   CODE_LENGTH, TTL_MS, MAX_ATTEMPTS, RESEND_COOLDOWN_MS, MAX_SENDS_PER_DAY
 };

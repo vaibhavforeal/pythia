@@ -34,8 +34,22 @@ const BIRTH_TO = 2010;
 const SEED = 20260725;
 
 // Deterministic PRNG (a re-run must reproduce the committed table exactly).
+//
+// mulberry32: 32-bit state, full 2^32 period, and every step stays inside exact
+// integer range. The previous `seed * 1103515245` did not: that product reaches
+// ~2.4e18, well past 2^53, so the low bits were silently rounded away. The
+// generator collapsed to 13,289 reachable states (period 10,466), which at six
+// draws per chart repeated the birth sequence every 5,233 charts — so the
+// sampler only ever saw 5,704 distinct births no matter how large N was, and
+// the "Sample: N charts" header and the ±CI below both overstated the evidence.
 let seed = SEED;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const rnd = () => {
+  seed = (seed + 0x6d2b79f5) >>> 0;
+  let t = seed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 const pick = arr => arr[Math.floor(rnd() * arr.length)];
 
 // Day-of-month capped at 28 so every month is equally weighted and no sampled

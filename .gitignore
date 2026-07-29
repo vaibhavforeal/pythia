@@ -11,3 +11,13 @@ design-system/
 # Firestore emulator debug output
 firestore-debug.log
 firebase-debug.log
+
+# Firebase/FCM client config. Not a server credential — Google ships it inside
+# the APK — but it carries the project id, Android API key, OAuth client ids and
+# the release signing SHA-1, and it belongs in mobile/android/app/, not here.
+google-services.json
+GoogleService-Info.plist
+
+# Service-account keys are secrets and must never be committed.
+*-service-account*.json
+serviceAccountKey*.json

@@ -197,6 +197,34 @@ if (CANONICAL_HOST) {
 }
 
 app.use(express.json({ limit: "1mb" }));
+
+// Defence in depth behind the DOMPurify pass in app.js: if markup ever does
+// reach the DOM, this bounds what it can do. Every fetch this app makes is
+// same-origin (city search is proxied through /api/geocode), so connect-src
+// 'self' blocks exfiltration to an attacker's origin, and script-src 'self'
+// blocks pulling in remote code. 'unsafe-inline' is still needed for the
+// pre-paint theme bootstrap in the page head and for inline styles; Google
+// Fonts is the only third-party origin the pages legitimately use.
+// Note this covers server-served pages only — the native shell loads its HTML
+// from the local bundle, where these headers don't apply.
+app.use((_req, res, next) => {
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'"
+  ].join("; "));
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 // Public health check (for the hosting platform) — no auth, before the gate.
@@ -570,7 +598,11 @@ app.post("/api/invites", async (req, res) => {
     const birth = parseBirth(b); // validates; throws HttpError
     const role = b.role === "bride" ? "bride" : "groom";
     const existing = await invites.forUser(req.userId);
-    if (existing && !invite.isExpired(existing)) {
+    if (existing) {
+      // Unconditionally, including when expired. The `!isExpired` guard that
+      // used to be here skipped the delete for exactly the rows that should be
+      // cleaned up, so a lapsed link left an orphan row behind on every mint —
+      // invisible (forUser only surfaces the newest) and never swept.
       await invites.remove(req.userId, existing.token); // details may have changed
     }
     const inv = {
@@ -766,7 +798,24 @@ async function chartForUser(user) {
 }
 
 // Look someone up by Soul ID and ask to connect.
-app.post("/api/friends/request", async (req, res) => {
+// soulid.js sizes the ID space (~4.1M) on the stated assumption that "the
+// search endpoint is rate limited on top" — it wasn't, and this route answers
+// 404 vs 200/409 unambiguously, so it was a clean directory-enumeration oracle
+// for any signed-up account. Keyed per user: the space is only meaningful
+// protection if one account can't sweep it. Every hit also writes a friend
+// request row to whoever it finds, so this bounds that spam too.
+const soulLookupBurst = auth.rateLimiter({
+  windowMs: 60 * 1000, max: 10,
+  key: req => req.userId,
+  message: "Too many lookups — give it a minute."
+});
+const soulLookupDaily = auth.rateLimiter({
+  windowMs: 24 * 60 * 60 * 1000, max: 100,
+  key: req => req.userId,
+  message: "You've reached today's limit for adding people by Soul ID."
+});
+
+app.post("/api/friends/request", soulLookupBurst, soulLookupDaily, async (req, res) => {
   try {
     const wanted = soulid.normalize((req.body || {}).soulId);
     if (!soulid.isValid(wanted)) return res.status(400).json({ error: "That isn't a Soul ID." });
@@ -967,7 +1016,18 @@ app.post("/api/devices", async (req, res) => {
       return res.status(400).json({ error: "Invalid device token." });
     }
     const tz = Number(b.tzOffsetMinutes);
-    const existing = (await store.devices.forUser(req.userId)).find(d => d.token === token);
+    // Look the token up globally, not just among this user's devices: `put`
+    // upserts on `token`, so a row owned by someone else would be silently
+    // overwritten and that person would stop receiving their own notifications.
+    // A takeover is still allowed — a shared phone genuinely re-registers the
+    // same token under a new account, and logout's unregister is best-effort so
+    // a stale row from the previous owner is normal — but it is logged, and the
+    // send state resets rather than being inherited from the previous owner.
+    const row = await store.devices.byToken(token);
+    const existing = row && row.userId === req.userId ? row : null;
+    if (row && !existing) {
+      console.warn(`device ${token.slice(0, 12)}… reassigned from user ${row.userId} to ${req.userId}`);
+    }
     await store.devices.put({
       token,
       userId: req.userId,
@@ -1070,13 +1130,21 @@ async function runDailyPush(atMs = Date.now(), hour = 8) {
 app.post("/api/cron/daily-push", async (req, res) => {
   const secret = (process.env.CRON_SECRET || "").trim();
   if (!secret) return res.status(503).json({ error: "CRON_SECRET is not set." });
-  const given = String(req.headers["x-cron-secret"] || "");
-  if (given.length !== secret.length ||
-      !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret))) {
+  // Compare as buffers throughout: a string's .length is UTF-16 units, but
+  // Buffer.from() measures UTF-8 bytes, and timingSafeEqual throws when those
+  // disagree — so a non-ASCII header of the "right" length would crash us.
+  const given = Buffer.from(String(req.headers["x-cron-secret"] || ""));
+  const want = Buffer.from(secret);
+  if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
     return res.status(403).json({ error: "Forbidden." });
   }
   try {
-    const hour = Number(process.env.PUSH_HOUR_LOCAL) || 8;
+    // `Number(x) || 8` would turn a configured 0 (local midnight) back into 8,
+    // making that one hour unsettable. Validate the range instead.
+    const configured = Number(process.env.PUSH_HOUR_LOCAL);
+    const hour = Number.isInteger(configured) && configured >= 0 && configured <= 23
+      ? configured
+      : 8;
     const summary = await runDailyPush(Date.now(), hour);
     console.log("  🔔 daily push:", JSON.stringify(summary));
     res.json(summary);
@@ -1092,10 +1160,21 @@ app.post("/api/cron/daily-push", async (req, res) => {
 // the visit and renders the badge.
 app.post("/api/streak", async (req, res) => {
   try {
-    const today = String((req.body && req.body.date) || "");
-    if (!streak.plausibleToday(today)) {
-      return res.status(400).json({ error: "Bad date." });
+    // The date is DERIVED from the client's UTC offset, never taken from the
+    // client's claim. The offset pins the local date to exactly one value, so
+    // there is nothing to walk forward; a claimed date could be posted as D-1,
+    // D and D+1 in one sitting to fake a three-day streak.
+    //
+    // Required, not optional: leaving the claimed-date path as a fallback would
+    // make the whole guard opt-in, and anyone forging a streak simply omits the
+    // offset. Clients that predate this send no offset and get a 400 — the
+    // streak is decoration and fails soft client-side, so they lose the feature
+    // until they update rather than breaking.
+    const b = req.body || {};
+    if (!streak.isValidOffset(b.tzOffsetMinutes)) {
+      return res.status(400).json({ error: "Missing or invalid tzOffsetMinutes." });
     }
+    const today = streak.localDay(b.tzOffsetMinutes);
     const prev = await users.getStreak(req.userId);
     if (!prev) return res.status(404).json({ error: "No such user." });
 
@@ -1275,6 +1354,63 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
     return res.status(400).json({ error: "No messages provided." });
   }
 
+  // The whole upstream request is built from client-supplied JSON, so it runs
+  // before a single header is flushed and inside a try: a malformed chart or
+  // match is then a plain 400, not a throw escaping this async handler (which
+  // Express 4 does not catch) after the response has already committed to 200.
+  let body;
+  try {
+    if (!messages.every(m => m && typeof m === "object" &&
+        (m.role === "user" || m.role === "assistant"))) {
+      return res.status(400).json({ error: "Malformed message in the conversation." });
+    }
+
+    // Anthropic Messages API system prompt: the practitioner skill (cached), the
+    // behaviour note, and the computed chart as separate blocks.
+    const system = [
+      { type: "text", text: SKILL_PROMPT, cache_control: { type: "ephemeral" } },
+      { type: "text", text: BEHAVIOUR_NOTE },
+      { type: "text", text: CARE_NOTE }
+    ];
+    if (chart) {
+      system.push({
+        type: "text",
+        text: "=== CONSULTATION CHART (authoritative) ===\n" + chartToText(chart)
+      });
+    }
+    if (match && match.summary) {
+      system.push({ type: "text", text: MATCH_NOTE });
+      system.push({
+        type: "text",
+        text: "=== COMPATIBILITY — GUNA MILAN + MANGLIK (authoritative) ===\n" + matchToText(match.summary)
+      });
+      if (match.partnerChart) {
+        system.push({
+          type: "text",
+          text: "=== PARTNER'S CHART (authoritative) ===\n" + chartToText(match.partnerChart)
+        });
+      }
+    }
+
+    // Cache the whole system prefix (skill + chart + compatibility) so a multi-turn
+    // conversation only pays full input price for it on the first message; later
+    // turns read it at ~10% cost. (The skill block above is a separate breakpoint.)
+    system[system.length - 1].cache_control = { type: "ephemeral" };
+
+    body = {
+      model: MODEL,
+      max_tokens: 2000, // cap output to keep replies focused and cheaper
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" }, // less deliberation → fewer tokens, terser
+      system,
+      messages: messages.map(m => ({ role: m.role, content: String(m.content) })),
+      stream: true
+    };
+  } catch (err) {
+    console.error("chat request build error:", err);
+    return res.status(400).json({ error: "Those chart details couldn't be read." });
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
@@ -1286,48 +1422,6 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
     send({ error: "Azure AI Foundry is not configured — set AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY in your .env file." });
     return res.end();
   }
-
-  // Anthropic Messages API system prompt: the practitioner skill (cached), the
-  // behaviour note, and the computed chart as separate blocks.
-  const system = [
-    { type: "text", text: SKILL_PROMPT, cache_control: { type: "ephemeral" } },
-    { type: "text", text: BEHAVIOUR_NOTE },
-    { type: "text", text: CARE_NOTE }
-  ];
-  if (chart) {
-    system.push({
-      type: "text",
-      text: "=== CONSULTATION CHART (authoritative) ===\n" + chartToText(chart)
-    });
-  }
-  if (match && match.summary) {
-    system.push({ type: "text", text: MATCH_NOTE });
-    system.push({
-      type: "text",
-      text: "=== COMPATIBILITY — GUNA MILAN + MANGLIK (authoritative) ===\n" + matchToText(match.summary)
-    });
-    if (match.partnerChart) {
-      system.push({
-        type: "text",
-        text: "=== PARTNER'S CHART (authoritative) ===\n" + chartToText(match.partnerChart)
-      });
-    }
-  }
-
-  // Cache the whole system prefix (skill + chart + compatibility) so a multi-turn
-  // conversation only pays full input price for it on the first message; later
-  // turns read it at ~10% cost. (The skill block above is a separate breakpoint.)
-  system[system.length - 1].cache_control = { type: "ephemeral" };
-
-  const body = {
-    model: MODEL,
-    max_tokens: 2000, // cap output to keep replies focused and cheaper
-    thinking: { type: "adaptive" },
-    output_config: { effort: "low" }, // less deliberation → fewer tokens, terser
-    system,
-    messages: messages.map(m => ({ role: m.role, content: String(m.content) })),
-    stream: true
-  };
 
   try {
     const headers = {
@@ -1412,8 +1506,24 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
   }
 });
 
-const int = v => (v === undefined || v === null || v === "" ? null : parseInt(v, 10));
-const num = v => (v === undefined || v === null || v === "" ? null : parseFloat(v));
+// parseInt/parseFloat stop at the first bad character, so "31st" became 31 and
+// "1990-01-01" became 1990 — garbage silently accepted as a confident chart.
+// Number() rejects the whole string instead. (parseBirth is the only caller.)
+const strictNum = v => {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== "string") return NaN;
+  const s = v.trim();
+  if (!s) return NaN; // Number(" ") is 0, which would pass as a real value
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+const int = v => {
+  const n = strictNum(v);
+  if (n === null || Number.isNaN(n)) return n;
+  return Number.isInteger(n) ? n : NaN;
+};
+const num = strictNum;
 const round4 = x => Math.round(Number(x) * 10000) / 10000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 529]); // transient upstream errors
@@ -1464,15 +1574,53 @@ function parseBirth(b) {
   for (const [k, v] of Object.entries(nums)) {
     if (v === null || Number.isNaN(v)) throw new HttpError(400, `Missing or invalid field: ${k}`);
   }
-  if (nums.month < 1 || nums.month > 12 || nums.day < 1 || nums.day > 31) {
-    throw new HttpError(400, "Invalid date.");
-  }
+  // Every one of these was previously unchecked, so the ephemeris happily
+  // returned a confident chart for lat 1000 or Feb 31 (silently computed as
+  // Mar 3). Wrong answers are worse than refusals here.
+  if (nums.year < -4000 || nums.year > 4000) throw new HttpError(400, "Year is out of range.");
+  if (nums.month < 1 || nums.month > 12) throw new HttpError(400, "Invalid date.");
+  // Day must exist in that month — Date.UTC rolls Feb 31 forward to Mar 3.
+  // Computed arithmetically rather than via Date.UTC, which maps years 0-99
+  // to 1900-1999 and would get the leap year wrong for ancient dates.
+  const leap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const daysInMonth = [31, leap(nums.year) ? 29 : 28, 31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31][nums.month - 1];
+  if (nums.day < 1 || nums.day > daysInMonth) throw new HttpError(400, "Invalid date.");
+  if (nums.hour < 0 || nums.hour > 23) throw new HttpError(400, "Hour must be between 0 and 23.");
+  if (nums.minute < 0 || nums.minute > 59) throw new HttpError(400, "Minute must be between 0 and 59.");
+  if (nums.lat < -90 || nums.lat > 90) throw new HttpError(400, "Latitude must be between -90 and 90.");
+  if (nums.lon < -180 || nums.lon > 180) throw new HttpError(400, "Longitude must be between -180 and 180.");
+  // Real UTC offsets span -12..+14; allow a little slack for historical zones.
+  if (nums.tz < -12 || nums.tz > 14) throw new HttpError(400, "UTC offset must be between -12 and +14.");
   // Rahu/Ketu aspect convention: "seventh" (7th only) or Jupiter-like (5/7/9).
   const nodeMode = b.nodeMode === "seventh" ? "seventh" : "jupiter";
   const nodeAspects = nodeMode === "seventh" ? [7] : [5, 7, 9];
   const name = b.name ? String(b.name).trim().slice(0, 80) : undefined;
   return { ...nums, nodeAspects, nodeMode, name };
 }
+
+// Last resort for anything a route threw synchronously (or passed to next).
+// Registered after every route so Express treats it as the error handler.
+// Without it, Express's default handler renders the stack trace into the body.
+app.use((err, req, res, _next) => {
+  const status = err instanceof HttpError ? err.status : 500;
+  if (status >= 500) console.error(`unhandled error on ${req.method} ${req.path}:`, err);
+  if (res.headersSent) return res.end();
+  res.status(status).json({
+    error: status >= 500 ? "Something went wrong." : err.message
+  });
+});
+
+// Express 4 does not catch a rejected promise from an `async` handler, so one
+// unguarded throw would otherwise reach Node's default and kill the process —
+// taking every other user's session down with it. Log and keep serving; a
+// single bad request is not a reason to drop the whole app.
+process.on("unhandledRejection", err => {
+  console.error("unhandled promise rejection:", err);
+});
+process.on("uncaughtException", err => {
+  console.error("uncaught exception:", err);
+});
 
 app.listen(PORT, () => {
   console.log(`\n  ✨ Pythia running at http://localhost:${PORT}`);

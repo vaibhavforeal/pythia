@@ -9,6 +9,8 @@
 // Moon changes sign every ~2.25 days, so the line naturally rotates without
 // anyone writing a content calendar.
 
+const { formatDay } = require("./dates");
+
 const DAY_MS = 86400000;
 
 // Moon transiting the Nth sign from your natal Moon. 1/3/6/7/10/11 are the
@@ -84,7 +86,9 @@ function isSendHour(device, atMs = Date.now(), hour = 8) {
 function alreadySentToday(device, atMs = Date.now()) {
   if (!device || !device.lastSentAt) return false;
   const off = Number(device.tzOffsetMinutes) || 0;
-  const localDay = ms => new Date(ms + off * 60000).toISOString().slice(0, 10);
+  // Equality only — both sides go through the same formatter, so the format
+  // itself is immaterial here. Uses the shared one to keep dates consistent.
+  const localDay = ms => formatDay(ms + off * 60000);
   return localDay(Date.parse(device.lastSentAt)) === localDay(atMs);
 }
 

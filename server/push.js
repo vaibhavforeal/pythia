@@ -111,9 +111,15 @@ async function send(deviceToken, message, data = {}) {
 
   if (res.ok) return { ok: true };
   const body = await res.text().catch(() => "");
-  // UNREGISTERED / INVALID_ARGUMENT on the token means the app was uninstalled
-  // or the token rotated.
-  const stale = res.status === 404 || /UNREGISTERED|NOT_FOUND|INVALID_ARGUMENT/i.test(body);
+  // Only prune on errors that are genuinely about *this token* — the app was
+  // uninstalled, or the token was minted for another sender. Deliberately NOT
+  // matched: a bare 404 (a wrong project_id 404s every send) and the bare
+  // string INVALID_ARGUMENT, which FCM returns for any malformed field — an
+  // over-long body or a bad AndroidConfig would otherwise delete the entire
+  // device registry on the first run after a bad deploy.
+  const stale =
+    (res.status === 404 && /UNREGISTERED/i.test(body)) ||
+    (res.status === 403 && /SENDER_ID_MISMATCH/i.test(body));
   return { ok: false, stale, error: `FCM ${res.status}: ${body.slice(0, 200)}` };
 }
 

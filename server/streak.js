@@ -6,34 +6,49 @@
 // blindly: any real timezone (UTC-12..UTC+14) puts the local date within one
 // day of the UTC date, so anything further out is a wrong clock or a spoof.
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DAY_MS = 86400000;
+const { formatDay, parseDay, daysBetween, DAY_MS } = require("./dates");
 
-/** YYYY-MM-DD -> epoch ms at UTC midnight, or NaN if malformed/not a real date. */
-function parseDay(s) {
-  if (!DATE_RE.test(String(s || ""))) return NaN;
-  const [y, m, d] = s.split("-").map(Number);
-  const ms = Date.UTC(y, m - 1, d);
-  const back = new Date(ms);
-  // Rejects 2026-02-31 and friends, which Date.UTC would silently roll over.
-  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== m - 1 || back.getUTCDate() !== d) return NaN;
-  return ms;
-}
-
-const toDay = ms => new Date(ms).toISOString().slice(0, 10);
-
-/** Whole days from `a` to `b` (both YYYY-MM-DD). */
-function daysBetween(a, b) {
-  return Math.round((parseDay(b) - parseDay(a)) / DAY_MS);
-}
+const toDay = formatDay;
 
 /**
  * Is `claimed` a plausible local date given the server's UTC now?
  * Allows exactly ±1 day, which covers every real UTC offset.
+ *
+ * NOTE this check alone cannot stop a client walking its streak forward: the
+ * window admits D-1, D and D+1, and `advance` counts each step as consecutive,
+ * so three posts in one real day yield a streak of 3. It is not fixable from
+ * the claimed date plus the server clock, because the cheat is observationally
+ * IDENTICAL to a legitimate user at, say, UTC-11 — whose two consecutive local
+ * days genuinely fall inside one UTC day, hours apart, claiming D then D+1.
+ * Distinguishing them needs the client's actual offset, so prefer localDay()
+ * below whenever the client supplies one; this stays as the fallback for
+ * clients that don't.
  */
 function plausibleToday(claimed, nowMs = Date.now()) {
   if (Number.isNaN(parseDay(claimed))) return false;
   return Math.abs(daysBetween(toDay(nowMs), claimed)) <= 1;
+}
+
+// Minutes to ADD to UTC to reach local time — same convention and range as
+// devices.tzOffsetMinutes (see notify.js), so the two can't drift apart.
+const MIN_OFFSET_MIN = -12 * 60;
+const MAX_OFFSET_MIN = 14 * 60;
+
+function isValidOffset(v) {
+  // typeof, not Number(): Number(null), Number("") and Number([]) are all 0,
+  // which is a perfectly valid offset (UTC) — so coercing would treat a missing
+  // or junk value as "this user is on UTC" instead of falling back to `date`.
+  if (typeof v !== "number" || !Number.isFinite(v)) return false;
+  return v >= MIN_OFFSET_MIN && v <= MAX_OFFSET_MIN;
+}
+
+/**
+ * The user's local YYYY-MM-DD, derived from their UTC offset and the server's
+ * clock. There is exactly one answer at any instant, so there is nothing to
+ * walk forward — the date stops being a client claim at all.
+ */
+function localDay(offsetMinutes, nowMs = Date.now()) {
+  return toDay(nowMs + Number(offsetMinutes) * 60000);
 }
 
 /**
@@ -54,8 +69,10 @@ function advance(prev, today) {
   };
   const unchanged = { ...cur, changed: false, milestone: false };
 
-  // Already counted today.
-  if (cur.last === today) return unchanged;
+  // Already counted today. Compared by parsed value, not string equality: a
+  // stored date may still be in the legacy YYYY-MM-DD format, and comparing
+  // "2026-07-27" === "27-07-2026" as strings would count the same day twice.
+  if (cur.last && daysBetween(cur.last, today) === 0) return unchanged;
 
   // A stored date in the future means a bad clock or a tampered payload; don't
   // let it advance the streak, and don't destroy what's already there.
@@ -82,4 +99,7 @@ function nextMilestone(current) {
   return MILESTONES.find(m => m > current) ?? null;
 }
 
-module.exports = { advance, plausibleToday, parseDay, daysBetween, nextMilestone, MILESTONES };
+module.exports = {
+  advance, plausibleToday, parseDay, daysBetween, nextMilestone, MILESTONES,
+  isValidOffset, localDay
+};
