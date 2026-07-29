@@ -195,4 +195,53 @@ function computeSadeSati(moonSign, nowMs) {
   };
 }
 
-module.exports = { computeTransits, computeSadeSati };
+// --- Sade Sati memo ---------------------------------------------------------
+//
+// computeSadeSati is ~99% of the cost of building a chart: 57ms, against 0.02ms
+// for the transit table and under a millisecond for the natal positions. It
+// samples Saturn weekly across a 42-year span and then refines the boundaries a
+// day at a time, so it makes a few thousand ephemeris calls per invocation.
+//
+// That matters because sweph is synchronous native code. Those 57ms are not
+// "slow for one user" — they are 57ms during which this process serves nobody.
+// GET /api/friends computes one chart per friend in sequence, so a 20-friend
+// list froze the whole server for over a second.
+//
+// The saving grace is the signature: the result depends only on the natal Moon
+// sign, of which there are exactly TWELVE, and on the time, which the function
+// already resolves no finer than a day (every boundary is stepped in whole days
+// and rendered as a date). So quantising the clock to the UTC day loses nothing
+// that was ever observable, and the whole population shares at most 12 entries
+// per day. It is a genuine memo of a pure function, not a staleness trade.
+//
+// Deliberately NOT cached: computeTransits, which reports live degrees and is
+// cheap enough that caching it would only add a way to serve stale positions.
+const DAY_MS_KEY = 86400000;
+const sadeSatiMemo = new Map();
+
+function computeSadeSatiMemo(moonSign, nowMs = Date.now()) {
+  const day = Math.floor(nowMs / DAY_MS_KEY);
+  const key = `${moonSign}:${day}`;
+  let hit = sadeSatiMemo.get(key);
+  if (!hit) {
+    // Compute from the START of the day rather than the caller's instant, so a
+    // given day always yields one answer no matter who asked first.
+    hit = computeSadeSati(moonSign, day * DAY_MS_KEY);
+    // Only ever ~12 live keys; anything else is yesterday's. Clearing wholesale
+    // is simpler than tracking ages and costs one recompute per sign per day.
+    if (sadeSatiMemo.size >= 24) sadeSatiMemo.clear();
+    sadeSatiMemo.set(key, hit);
+  }
+  // Hand back a copy: this object is shared by every request for that sign
+  // today, and a caller mutating it would corrupt everyone else's chart. The
+  // clone is microseconds against the 57ms it replaces.
+  return structuredClone(hit);
+}
+
+module.exports = {
+  computeTransits,
+  computeSadeSati: computeSadeSatiMemo,
+  // The uncached function, for tests that need to measure or bypass the memo.
+  computeSadeSatiUncached: computeSadeSati,
+  _memoSize: () => sadeSatiMemo.size
+};
