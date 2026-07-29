@@ -1607,3 +1607,12 @@ button {
 .vc-situation .vc-emoji { font-size: 24px; color: #c4b5fd; }
 .vc-situation .vc-line { font-size: 12.5px; line-height: 1.6; }
 .profile .vc-situation .vc-line { font-size: 11.5px; line-height: 1.55; }
+
+/* Inline action inside the Soul ID hint — the route to getting one. */
+.soul-link {
+  color: var(--sky);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.soul-link:hover { opacity: 0.8; }

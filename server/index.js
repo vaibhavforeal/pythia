@@ -12,6 +12,7 @@ const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
 const oauth = require("./oauth");
+const { resolveGoogleAccount } = require("./google-link");
 const cloudflare = require("./cloudflare");
 const streak = require("./streak");
 const invite = require("./invite");
@@ -543,6 +544,15 @@ app.get("/api/auth/google", (req, res) => {
   if (!oauth.enabled) return res.redirect("/app?auth_error=google_off");
   const state = crypto.randomBytes(16).toString("hex");
   auth.setCookie(res, "oauth_state", state, 600); // 10 min
+  // "Connect Google to the account I'm already in" is a different operation
+  // from "sign me in", and the difference is security-relevant — so it is
+  // recorded as an explicit intent here rather than inferred at callback time
+  // from whatever session happens to be open in this browser. Without that, a
+  // plain sign-in on a shared device would silently graft the Google identity
+  // onto someone else's account.
+  if (String(req.query.link || "") === "1" && auth.currentUserId(req)) {
+    auth.setCookie(res, "oauth_link", "1", 600);
+  }
   res.redirect(oauth.authUrl(req, state));
 });
 
@@ -551,8 +561,11 @@ app.get("/api/auth/google/callback", async (req, res) => {
   try {
     if (!oauth.enabled) return res.redirect("/app");
     const { code, state } = req.query;
-    const saved = auth.parseCookies(req).oauth_state;
+    const cookies = auth.parseCookies(req);
+    const saved = cookies.oauth_state;
+    const linking = cookies.oauth_link === "1";
     auth.clearCookie(res, "oauth_state");
+    auth.clearCookie(res, "oauth_link");
     if (!code || !state || !saved || state !== saved) return res.redirect("/app?auth_error=state");
 
     const tokens = await oauth.exchangeCode(req, String(code));
@@ -561,16 +574,16 @@ app.get("/api/auth/google/callback", async (req, res) => {
     if (!email || profile.email_verified === false) return res.redirect("/app?auth_error=email");
     const gid = String(profile.sub);
 
-    let user = await users.findByGoogleId(gid);
-    if (!user) {
-      const existing = await users.findByEmail(email);
-      if (existing) {
-        await users.update(existing.id, { googleId: gid }); // link Google to the existing email account
-        user = existing;
-      } else {
-        user = await users.add({ id: crypto.randomUUID(), email, googleId: gid, createdAt: new Date().toISOString() });
-      }
-    }
+    // Only honour the link intent if the session is still real at this moment.
+    const sessionUserId = linking ? auth.currentUserId(req) : null;
+    const outcome = await resolveGoogleAccount(users, { gid, email, sessionUserId });
+    if (outcome.error) return res.redirect(`/app?auth_error=${outcome.error}`);
+    const user = outcome.user;
+
+    // Google has verified this address (checked above), so this is a proven
+    // identity and earns a Soul ID — the same standard the phone path applies.
+    // Unverified email/password accounts deliberately still get none.
+    await ensureSoulId(user);
     auth.setSessionCookie(res, auth.makeSessionToken(user.id));
     await linkPendingInvite(req, res, user.id);
     res.redirect("/app");

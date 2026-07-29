@@ -8,6 +8,9 @@ let lastInput = null; // last birth input, so the node toggle can recompute
 let currentVarga = "D10"; // which divisional chart the selector shows
 let currentBav = "Saturn"; // which planet's Bhinnashtakavarga the SAV table shows
 // Nerd mode is a sticky preference (sidebar switch), not a per-visit disclosure.
+// Which sign-in routes the server actually has configured; drives both the
+// login buttons and the Soul ID hint.
+let authProviders = {};
 let nerdOpen = (() => {
   try { return localStorage.getItem("nerdMode") === "1"; } catch (_) { return false; }
 })();
@@ -338,6 +341,21 @@ function renderSoulId() {
   row.hidden = !id;
   if (hint) hint.hidden = !!id;
   if (id) $("soulValue").textContent = id;
+  // A Soul ID needs a PROVEN identity, so the hint has to name a route that is
+  // actually switched on. It used to hard-code "verify your mobile number",
+  // which read as a broken feature whenever SMS was off — and SMS is off until
+  // DLT clearance, so that was everyone.
+  if (hint && !id) {
+    if (authProviders.google) {
+      hint.innerHTML =
+        'Connect Google to get your Soul ID. ' +
+        '<a class="soul-link" href="/api/auth/google?link=1">connect Google</a>';
+    } else if (authProviders.phone) {
+      hint.textContent = "Verify your mobile number to get a Soul ID.";
+    } else {
+      hint.textContent = "Soul IDs aren't available yet — check back soon.";
+    }
+  }
   // Without a Soul ID you can still receive requests, but not be found.
   const form = $("addFriendForm");
   if (form) form.hidden = false;
@@ -2064,9 +2082,11 @@ async function loadProviders() {
   try {
     const res = await fetch("/api/auth/providers");
     const data = await res.json();
+    authProviders = data || {};
     const on = !!(data && data.google);
     if (googleBtn) googleBtn.hidden = !on;
     if (authDivider) authDivider.hidden = !on;
+    renderSoulId(); // the "how do I get one" hint depends on what's switched on
   } catch {
     /* leave the Google button hidden */
   }
@@ -2077,7 +2097,12 @@ const AUTH_ERRORS = {
   state: "Google sign-in expired — please try again.",
   email: "Google didn't share a verified email address.",
   oauth: "Google sign-in failed — please try again.",
-  google_off: "Google sign-in isn't configured."
+  google_off: "Google sign-in isn't configured.",
+  // Refused rather than linked — see the callback in server/index.js.
+  email_taken:
+    "An account already uses that email address. Sign in with your password, " +
+    "then connect Google from the friends panel.",
+  google_taken: "That Google account is already linked to a different Pythia account."
 };
 function checkAuthError() {
   const code = new URLSearchParams(location.search).get("auth_error");
