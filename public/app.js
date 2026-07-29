@@ -1840,7 +1840,10 @@ async function sendMessage(text) {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history, chart, match })
+      // Nerd mode already governs whether the technical chart tables are shown;
+      // send it so the reply matches. Read at send time, not captured earlier,
+      // so flipping the switch takes effect on the very next message.
+      body: JSON.stringify({ messages: history, chart, match, nerdMode: nerdOpen })
     });
     if (res.status === 401) { showAuth(); throw new Error("Session expired — please log in again."); }
     if (!res.ok || !res.body) {

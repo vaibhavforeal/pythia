@@ -128,6 +128,69 @@ const MATCH_NOTE =
   "scores, the total out of 36, the Nadi/Bhakoot dosha flags, and the Manglik verdict) and " +
   "explain what they mean together — warmly and honestly, without sugar-coating real doshas.";
 
+// The chart handed to the model is fully technical — Sanskrit names, house
+// numbers, dasha lords — and it should stay that way; that is what makes the
+// answer correct. What comes BACK should not be. Most people opening this app
+// have never heard of a kendra, and a reply that assumes otherwise reads as
+// gatekeeping rather than expertise.
+//
+// The register below isn't invented for this prompt. public/yoga-names.js and
+// the vibe cards in app.js already talk like this ("main-character era",
+// "lock-in / hard-mode era", "the bag follows when you lean in"), and the same
+// file records the principle: the Sanskrit stays the credibility anchor, the
+// surface leads with what it actually means. Chat was the one place still
+// talking like a textbook.
+//
+// The anti-slang paragraph is doing more work than the pro-casual one. A model
+// told to "sound Gen Z" reaches for the loudest markers it knows and produces
+// parody, which is condescending to precisely the readers it's aimed at. The
+// target is what a sharp 19-year-old would actually type, not slang performed
+// at them.
+const VOICE_NOTE =
+  "VOICE. Think in Vedic astrology; do not speak in it. Reason with every Sanskrit " +
+  "name, house number and dasha lord in the chart above — then say what it MEANS in " +
+  "ordinary language someone with zero astrology background understands without " +
+  "looking anything up.\n" +
+  "LEAD WITH THE MEANING, NEVER THE TERM. Do not open a point with a placement and then " +
+  "explain it — that still makes the reader decode a sentence before they get anything. " +
+  "Say the human thing first; the term is optional, goes in brackets, and only if it " +
+  "genuinely adds something.\n" +
+  "  BAD:  \"Your 10th house holds Moon with Rahu. This means your career is tied to " +
+  "your identity.\"\n" +
+  "  GOOD: \"your work and your sense of self are the same thing to you — which is why a " +
+  "job that's 'fine' still feels wrong.\"\n" +
+  "  BAD:  \"Mars lords the 10th and sits in the 12th with Saturn, so you earn results " +
+  "through effort.\"\n" +
+  "  GOOD: \"you do your best work out of sight, and nothing lands cheap for you — but " +
+  "what you build actually holds.\"\n" +
+  "  BAD:  \"You are running Saturn antardasha until May 2027 alongside Sade Sati.\"\n" +
+  "  GOOD: \"the next 18 months are a grind stretch — more effort, less applause. that's " +
+  "the weather, not your ceiling.\"\n" +
+  "A whole reply with no Sanskrit in it at all is a success, not a gap.\n" +
+  "Register: warm, direct, specific, lightly informal — a sharp friend who happens to " +
+  "know this stuff, talking to one person, not lecturing a room. Short sentences. " +
+  "Concrete nouns. Second person. Lowercase-leaning is fine. An occasional bit of idiom " +
+  "is fine where it genuinely fits.\n" +
+  "DO NOT perform slang. No \"no cap\", \"fr\", \"bestie\", \"slay\", \"rizz\", \"it's " +
+  "giving\", no stacked emoji, no ironic capitals, no forced era-speak in every " +
+  "sentence. Overdone slang reads as an adult impersonating a teenager and is worse " +
+  "than plain English. Aim at a good group chat, not a brand account chasing a trend.\n" +
+  "The astrology is your reasoning, never your answer. \"Saturn is in your 10th\" is not " +
+  "a response — what they should do differently because of it is.";
+
+// Nerd mode is an existing switch in the UI (public/app.js), where it reveals the
+// technical chart tables. Someone who turned it on has asked for the vocabulary,
+// so honour that here too rather than talking down to them. Additive, not a
+// replacement: precision ON TOP of the plain meaning, never instead of it.
+const NERD_NOTE =
+  "NERD MODE is ON — this user has explicitly asked for the technical layer. Use the " +
+  "proper vocabulary freely: Sanskrit yoga names, house numbers and lords, " +
+  "dasha/antardasha, kendra/trikona, exaltation and debilitation, nakshatras and " +
+  "degrees. Assume they know the system and skip the basic glosses.\n" +
+  "Keep the plain-language meaning alongside the terminology rather than dropping it — " +
+  "they want precision added, not warmth removed. Stay concise; this is still a chat, " +
+  "not a written report.";
+
 const app = express();
 
 // How many proxy hops sit in front of this process. Express uses this to derive
@@ -1358,6 +1421,9 @@ const chatDailyLimit = auth.persistentRateLimiter({
 
 app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
   const { messages, chart, match } = req.body || {};
+  // Strict true, so an absent or junk flag means casual — the default has to be
+  // the one that's safe for someone who has never seen a birth chart.
+  const nerdMode = (req.body || {}).nerdMode === true;
   if (!Array.isArray(messages) || !messages.length) {
     return res.status(400).json({ error: "No messages provided." });
   }
@@ -1375,10 +1441,13 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
 
     // Anthropic Messages API system prompt: the practitioner skill (cached), the
     // behaviour note, and the computed chart as separate blocks.
+    // Placed after SKILL_PROMPT's own cache breakpoint, so toggling nerd mode
+    // can't invalidate the big block — only the short tail after it.
     const system = [
       { type: "text", text: SKILL_PROMPT, cache_control: { type: "ephemeral" } },
       { type: "text", text: BEHAVIOUR_NOTE },
-      { type: "text", text: CARE_NOTE }
+      { type: "text", text: CARE_NOTE },
+      { type: "text", text: nerdMode ? NERD_NOTE : VOICE_NOTE }
     ];
     if (chart) {
       system.push({
