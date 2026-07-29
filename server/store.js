@@ -12,6 +12,29 @@ const fs = require("fs");
 const URL = (process.env.SUPABASE_URL || "").trim();
 const KEY = (process.env.SUPABASE_SERVICE_KEY || "").trim();
 
+// Refuse to start rather than degrade quietly.
+//
+// The fallback below is right for `npm start` on a laptop and wrong for a
+// container: on Render there is no disk, and the free plan spins down when
+// idle, so the JSON files are erased on every spin-down and every deploy. A
+// typo in SUPABASE_URL used to produce a completely healthy-looking service —
+// /healthz 200, pages served, logins accepted — that silently dropped every
+// account, streak and conversation a few minutes later. A boot crash is loud,
+// immediate, and impossible to mistake for a working deploy.
+//
+// Set ALLOW_EPHEMERAL_STORE=true if you genuinely mean it (a mounted disk, or
+// a throwaway environment). NODE_ENV is `production` in the Dockerfile and
+// `test` in the suite, so neither dev nor tests are affected.
+if (process.env.NODE_ENV === "production" && !(URL && KEY) &&
+    String(process.env.ALLOW_EPHEMERAL_STORE || "").toLowerCase() !== "true") {
+  throw new Error(
+    "Refusing to start: SUPABASE_URL and SUPABASE_SERVICE_KEY are not both set, " +
+    "so the store would fall back to JSON files — which are erased on every " +
+    "restart in a container. Set them, or ALLOW_EPHEMERAL_STORE=true if the " +
+    "data is genuinely disposable."
+  );
+}
+
 // Postgres columns are snake_case; the rest of the app speaks camelCase. Extra
 // keys are added rather than renamed, so code reading user.email/.hash/.salt is
 // untouched while user.soulId/.phoneVerified work on both backends.
@@ -188,6 +211,33 @@ function supabaseBackend(url, key) {
     },
     // One pending OTP per number; a consumed code is deleted rather than
     // flagged, so a replay has nothing left to match against.
+    // Fixed-window counters that have to outlive the process. See the note on
+    // auth.persistentRateLimiter for why the daily caps can't live in a Map.
+    //
+    // Read-then-write, so two simultaneous requests can both read the same
+    // count and one increment is lost. That is acceptable here and not worth an
+    // RPC: the burst limiter in front caps concurrency at ~20/min per user, so
+    // the daily figure can drift by a handful at most, and it drifts toward
+    // letting a few extra through rather than locking anyone out.
+    //
+    // Rows are bounded by (users x limiter kinds) because the bucket key is
+    // stable per user, so expired rows are overwritten in place and there is
+    // nothing to sweep.
+    rateLimits: {
+      async hit(bucket, windowMs, nowMs = Date.now()) {
+        const { data, error } = await sb.from("rate_limits")
+          .select("*").eq("bucket", bucket).maybeSingle();
+        if (error) throw error;
+        const live = data && Date.parse(data.reset_at) > nowMs;
+        const count = live ? data.count + 1 : 1;
+        const resetAt = live ? Date.parse(data.reset_at) : nowMs + windowMs;
+        const { error: upErr } = await sb.from("rate_limits").upsert({
+          bucket, count, reset_at: new Date(resetAt).toISOString()
+        }, { onConflict: "bucket" });
+        if (upErr) throw upErr;
+        return { count, resetAt };
+      }
+    },
     otps: {
       async get(phone) {
         const { data, error } = await sb.from("otps").select("*").eq("phone", phone).maybeSingle();
@@ -413,7 +463,9 @@ function jsonBackend() {
   const FRIEND_REQ = path.join(DATA_DIR, "friend-requests.json");
   const BLOCKS = path.join(DATA_DIR, "blocks.json");
   const DEVICES = path.join(DATA_DIR, "devices.json");
-  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES, OTPS, FRIENDS, FRIEND_REQ, BLOCKS, DEVICES]) {
+  const RATELIMITS = path.join(DATA_DIR, "rate-limits.json");
+  for (const f of [USERS, PEOPLE, CONV, INVITES, INVITE_RES, OTPS, FRIENDS, FRIEND_REQ, BLOCKS,
+    DEVICES, RATELIMITS]) {
     if (!fs.existsSync(f)) fs.writeFileSync(f, "[]");
   }
 
@@ -517,6 +569,23 @@ function jsonBackend() {
       async remove(token) {
         write(DEVICES, read(DEVICES).filter(d => d.token !== token));
         return true;
+      }
+    },
+    // Mirror of the Supabase rateLimits API above, same drift caveat.
+    rateLimits: {
+      async hit(bucket, windowMs, nowMs = Date.now()) {
+        const all = read(RATELIMITS);
+        const i = all.findIndex(r => r.bucket === bucket);
+        const cur = i >= 0 ? all[i] : null;
+        const live = cur && cur.resetAt > nowMs;
+        const row = {
+          bucket,
+          count: live ? cur.count + 1 : 1,
+          resetAt: live ? cur.resetAt : nowMs + windowMs
+        };
+        if (i >= 0) all[i] = row; else all.push(row);
+        write(RATELIMITS, all);
+        return { count: row.count, resetAt: row.resetAt };
       }
     },
     // Mirror of the Supabase otps/friends APIs above.

@@ -4,6 +4,9 @@
 // and COOKIE_SECURE=true behind HTTPS.
 const crypto = require("crypto");
 const { promisify } = require("util");
+// Only used by persistentRateLimiter at the bottom. store.js requires nothing
+// from here, so this is not a cycle.
+const store = require("./store");
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -309,9 +312,43 @@ function rateLimiter({ windowMs, max, key, message }) {
   };
 }
 
+// Same fixed-window shape as rateLimiter, but the counter lives in the store.
+//
+// Use this for any window long enough to outlive the process. A Map resets on
+// restart, which is invisible on a long-lived box but not on a container that
+// spins down when idle: there, a "daily" cap silently becomes "per wake", and
+// anyone who wants a fresh budget just waits for the app to go to sleep. That
+// matters most for the chat limiter, which is the cap on a paid API.
+//
+// Short windows stay in memory on purpose — a per-minute burst cap is worth
+// nothing after a restart anyway, and it shouldn't pay for a round trip.
+//
+// Fails OPEN if the store is unreachable: this runs in front of routes that are
+// about to hit the same store, so failing closed would convert a database blip
+// into a blanket 429 while adding no protection. The in-memory burst limiter
+// stays in front regardless, so an open failure is still bounded.
+function persistentRateLimiter({ windowMs, max, key, message, prefix }) {
+  return async (req, res, next) => {
+    const k = key(req);
+    if (!k) return next(); // no identity → let auth handle it
+    let rec;
+    try {
+      rec = await store.rateLimits.hit(`${prefix}:${k}`, windowMs);
+    } catch (err) {
+      console.error(`rate limit store unavailable for ${prefix}:`, err.message);
+      return next();
+    }
+    if (rec.count > max) {
+      res.setHeader("Retry-After", String(Math.max(1, Math.ceil((rec.resetAt - Date.now()) / 1000))));
+      return res.status(429).json({ error: message || "Too many requests — please slow down." });
+    }
+    next();
+  };
+}
+
 module.exports = {
   hashPassword, verifyPassword, makeSessionToken,
   setSessionCookie, clearSessionCookie, setCookie, clearCookie, parseCookies, currentUserId,
-  requireAuth, checkOrigin, rateLimit, rateLimiter, ephemeralSecret, SECURE,
+  requireAuth, checkOrigin, rateLimit, rateLimiter, persistentRateLimiter, ephemeralSecret, SECURE,
   clientIp, TRUST_CLOUDFLARE, bearerToken, usedBearer, APP_ORIGINS, appCors, wantsToken
 };

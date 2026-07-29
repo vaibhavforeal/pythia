@@ -169,6 +169,20 @@ create table if not exists public.devices (
 );
 create index if not exists idx_devices_user on public.devices(user_id);
 
+-- Fixed-window rate-limit counters that must outlive the process. Only the long
+-- windows live here; per-minute burst caps stay in memory, where a reset costs
+-- nothing. Without this a "daily" cap resets whenever the service restarts —
+-- which on a plan that spins down when idle is several times a day.
+--
+-- `bucket` is "<limiter>:<userId>", so the row count is bounded by users times
+-- limiters and expired windows are overwritten in place. Nothing to sweep.
+create table if not exists public.rate_limits (
+  bucket    text primary key,
+  count     integer not null default 0,
+  reset_at  timestamptz not null
+);
+
+alter table public.rate_limits      enable row level security;
 alter table public.otps             enable row level security;
 alter table public.devices          enable row level security;
 alter table public.friendships      enable row level security;

@@ -809,9 +809,13 @@ const soulLookupBurst = auth.rateLimiter({
   key: req => req.userId,
   message: "Too many lookups — give it a minute."
 });
-const soulLookupDaily = auth.rateLimiter({
+// Persistent for the same reason as the chat cap: the ID space is only
+// meaningful protection if the daily budget can't be reset by waiting for the
+// app to idle out.
+const soulLookupDaily = auth.persistentRateLimiter({
   windowMs: 24 * 60 * 60 * 1000, max: 100,
   key: req => req.userId,
+  prefix: "soul-lookup-daily",
   message: "You've reached today's limit for adding people by Soul ID."
 });
 
@@ -1341,10 +1345,14 @@ const chatBurstLimit = auth.rateLimiter({
   key: req => req.userId,
   message: "You're sending messages too quickly — give it a few seconds and try again."
 });
-const chatDailyLimit = auth.rateLimiter({
+// Persistent, not in-memory: this is the cap on a paid API, and on a plan that
+// spins down when idle a Map-backed "daily" limit resets every time the app
+// wakes. See auth.persistentRateLimiter.
+const chatDailyLimit = auth.persistentRateLimiter({
   windowMs: 24 * 60 * 60 * 1000,
   max: Number(process.env.CHAT_RPD) || 300,
   key: req => req.userId,
+  prefix: "chat-daily",
   message: "You've reached today's chat limit. Please try again tomorrow."
 });
 
