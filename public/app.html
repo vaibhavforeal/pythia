@@ -37,6 +37,7 @@
       <header id="mobileBar" class="mobile-bar" hidden>
         <img class="brand-mark" src="logo.png" alt="Pythia" />
         <h1>Pythia</h1>
+        <button type="button" class="pwa-install-chip" data-pwa-install title="Install Pythia App" hidden>📲 Install</button>
         <!-- Streak also lives here: the sidebar copy is behind ☰ on mobile. -->
         <span class="streak" id="streakChipMobile" hidden><span aria-hidden="true">🔥</span><b class="streak-n">0</b></span>
         <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode"></button>
@@ -49,11 +50,21 @@
             <h1>Pythia</h1>
             <p class="tag">your cosmic cheat code ✦</p>
           </div>
+          <button type="button" class="pwa-install-chip" data-pwa-install title="Install Pythia App" hidden>📲 Install</button>
           <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode"></button>
           <button type="button" id="panelClose" class="panel-close" aria-label="Close panel">✕</button>
         </div>
 
         <div class="panel-scroll">
+        <div class="pwa-install-card" id="pwaInstallCard" hidden>
+          <div class="pwa-ic">📲</div>
+          <div class="pwa-text">
+            <b>Get the Pythia App</b>
+            <small>Install to home screen for quick offline access</small>
+          </div>
+          <button type="button" class="pwa-btn" data-pwa-install>Install</button>
+        </div>
+
         <div class="account" id="account" hidden>
           <span class="account-user">Signed in as <b id="accountName"></b></span>
           <span class="streak" id="streakChip" hidden><span aria-hidden="true">🔥</span><b class="streak-n">0</b></span>
