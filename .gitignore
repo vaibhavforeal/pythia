@@ -21,3 +21,8 @@ GoogleService-Info.plist
 # Service-account keys are secrets and must never be committed.
 *-service-account*.json
 serviceAccountKey*.json
+
+# Screen recordings / media
+*.mp4
+*.webm
+WhatsApp Video*
