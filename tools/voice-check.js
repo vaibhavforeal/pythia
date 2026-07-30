@@ -103,7 +103,16 @@ async function chat(chart, question, nerdMode) {
     console.log(nerd);
 
     // Rough signal, not a pass/fail: casual should be a small fraction of nerd.
-    const JARGON = /\b(kendra|trikona|antardasha|mahadasha|dasha|nakshatra|lagna|\d+(st|nd|rd|th) lord|exalt|debilit|conjunct|yoga|dosha|ayanamsa|dasamsa|navamsa)\b/gi;
+    //
+    // Counts references a reader with no astrology background would have to look
+    // up. The first version of this missed the most common leak by far — plain
+    // house references like "your 10th house" — and so scored a reply as clean
+    // while it opened three paragraphs with one. If you widen this, re-baseline:
+    // the numbers are only comparable within one version of the pattern.
+    //
+    // One run is a sample, not a measurement — model output varies between
+    // identical calls. Compare configurations over several runs, not one.
+    const JARGON = /\b(\d+(st|nd|rd|th)\s+(house|lord)|kendra|trikona|antar ?dasha|maha ?dasha|dasha|nakshatra|lagna|vargottama|varga|rashi|bhava|graha|drishti|navamsa|dasamsa|ayanamsa|exalt\w*|debilit\w*|conjunct\w*|yoga|dosha|manglik|sade ?sati|ascendant)\b/gi;
     const cj = (casual.match(JARGON) || []).length;
     const nj = (nerd.match(JARGON) || []).length;
     console.log(`\n\n---- jargon terms: casual=${cj}  nerd=${nj} ----`);

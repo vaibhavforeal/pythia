@@ -64,6 +64,13 @@ const publicUser = u => ({ id: u.id, name: displayName(u), email: u.email || nul
 const ENDPOINT = process.env.AZURE_INFERENCE_ENDPOINT;
 const API_KEY = process.env.AZURE_INFERENCE_KEY;
 const MODEL = process.env.AZURE_DEPLOYMENT || process.env.ASTROMAN_MODEL || "claude-opus-4-8-2";
+// Allow-listed rather than passed through: an unrecognised value is a 400 from
+// the model provider on every chat request, which is a bad way to find out you
+// typo'd an env var.
+const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const CHAT_EFFORT = EFFORTS.has((process.env.CHAT_EFFORT || "").trim().toLowerCase())
+  ? process.env.CHAT_EFFORT.trim().toLowerCase()
+  : "low";
 const PORT = process.env.PORT || 3030;
 
 const SKILL_PROMPT = loadSkill();
@@ -1491,7 +1498,13 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
       model: MODEL,
       max_tokens: 2000, // cap output to keep replies focused and cheaper
       thinking: { type: "adaptive" },
-      output_config: { effort: "low" }, // less deliberation → fewer tokens, terser
+      // Tunable without a deploy, like CHAT_RPD. Effort is the cheapest lever on
+      // both cost and voice: lower means fewer tokens and terser replies, but
+      // models follow the plain-language rules in VOICE_NOTE less closely at the
+      // bottom of the range, so jargon starts leaking back in. Worth re-checking
+      // with tools/voice-check.js after changing model OR effort — the right
+      // setting differs between them.
+      output_config: { effort: CHAT_EFFORT },
       system,
       messages: messages.map(m => ({ role: m.role, content: String(m.content) })),
       stream: true
