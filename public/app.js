@@ -1816,57 +1816,68 @@ function renderMarkdown(el, text) {
 // today — but a future top-level call would throw, and this costs nothing.
 let stickToBottom = true;
 let touching = false;
+let lastScrollTop = 0;
+let touchStartY = 0;
 
 function scrollDown() {
   stickToBottom = true; // a deliberate jump to the end re-arms the follow
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (messagesEl) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    lastScrollTop = messagesEl.scrollTop;
+  }
 }
 
-// True when the view is at (or within ~120px of) the bottom.
+// True when the view is at (or within 20px of) the very bottom.
 function isNearBottom() {
-  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+  if (!messagesEl) return true;
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 20;
 }
 
-// Whether the stream should keep following the newest text.
-//
-// This is LATCHED state, not a per-frame measurement, and that distinction is
-// the whole fix. Deciding from position on every animation frame meant any
-// scroll that stayed inside the 120px threshold was immediately undone — and
-// worse, a programmatic scrollTop assignment landing mid-gesture cancels the
-// scroll the user is physically performing, so a trackpad or touch drag felt
-// like the window was being pulled out of their hands. Now an upward gesture
-// releases the follow at once and it only re-arms when they return to the
-// bottom themselves. (Declared above scrollDown, which reads it.)
-
-if (messagesEl) messagesEl.addEventListener("scroll", () => {
-  // scrollDown() trips this too, but it lands at the bottom, so it re-affirms
-  // the latch rather than clearing it.
-  stickToBottom = isNearBottom();
-}, { passive: true });
-
-// Release on intent rather than on position. Waiting for the scroll to clear
-// the 120px band is what made small upward nudges snap back: the gesture and
-// the auto-scroll were fighting inside that band.
-if (messagesEl) messagesEl.addEventListener("wheel", e => {
-  if (e.deltaY < 0) stickToBottom = false;
-}, { passive: true });
-
-// Touch is the case being complained about — the finger is down and the view
-// keeps jumping. Suspend following for the whole gesture and let the scroll
-// handler settle the latch afterwards.
 if (messagesEl) {
-  messagesEl.addEventListener("touchstart", () => { touching = true; }, { passive: true });
-  // Deliberately does NOT re-measure here. A flick releases the finger while the
-  // view is still near the bottom and momentum carries it up afterwards —
-  // re-arming on touchend would follow the stream for those few frames and kill
-  // the momentum scroll. The scroll handler above is the single authority; it
-  // fires throughout momentum and settles the latch wherever the reader lands.
+  lastScrollTop = messagesEl.scrollTop;
+
+  messagesEl.addEventListener("scroll", () => {
+    const currentScrollTop = messagesEl.scrollTop;
+    // An upward scroll (currentScrollTop < lastScrollTop) is explicit intent to read earlier text
+    if (currentScrollTop < lastScrollTop - 2) {
+      stickToBottom = false;
+    } else if (isNearBottom()) {
+      stickToBottom = true;
+    }
+    lastScrollTop = currentScrollTop;
+  }, { passive: true });
+
+  messagesEl.addEventListener("wheel", e => {
+    if (e.deltaY < 0) stickToBottom = false;
+  }, { passive: true });
+
+  messagesEl.addEventListener("touchstart", e => {
+    touching = true;
+    if (e.touches && e.touches[0]) {
+      touchStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  messagesEl.addEventListener("touchmove", e => {
+    if (e.touches && e.touches[0]) {
+      const currentY = e.touches[0].clientY;
+      // Dragging finger DOWN scrolls content UP (towards top of chat) — release follow
+      if (currentY > touchStartY + 5) {
+        stickToBottom = false;
+      }
+    }
+  }, { passive: true });
+
   messagesEl.addEventListener("touchend", () => { touching = false; }, { passive: true });
+  messagesEl.addEventListener("touchcancel", () => { touching = false; }, { passive: true });
 }
 
 /** Follow the stream only if the reader hasn't taken over. */
 function followStream() {
-  if (stickToBottom && !touching) messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (stickToBottom && !touching && messagesEl) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    lastScrollTop = messagesEl.scrollTop;
+  }
 }
 
 async function sendMessage(text) {
