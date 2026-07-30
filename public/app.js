@@ -1811,14 +1811,62 @@ function renderMarkdown(el, text) {
     : sanitizeHtml(text).replace(/\n/g, "<br>");
 }
 
+// Declared ahead of scrollDown(), which reads it. Every current call happens
+// after this module finishes evaluating, so the temporal dead zone is not hit
+// today — but a future top-level call would throw, and this costs nothing.
+let stickToBottom = true;
+let touching = false;
+
 function scrollDown() {
+  stickToBottom = true; // a deliberate jump to the end re-arms the follow
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-// True when the view is at (or within ~120px of) the bottom. Used to keep the
-// stream pinned to the newest text only while the user hasn't scrolled up to read.
+// True when the view is at (or within ~120px of) the bottom.
 function isNearBottom() {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+}
+
+// Whether the stream should keep following the newest text.
+//
+// This is LATCHED state, not a per-frame measurement, and that distinction is
+// the whole fix. Deciding from position on every animation frame meant any
+// scroll that stayed inside the 120px threshold was immediately undone — and
+// worse, a programmatic scrollTop assignment landing mid-gesture cancels the
+// scroll the user is physically performing, so a trackpad or touch drag felt
+// like the window was being pulled out of their hands. Now an upward gesture
+// releases the follow at once and it only re-arms when they return to the
+// bottom themselves. (Declared above scrollDown, which reads it.)
+
+if (messagesEl) messagesEl.addEventListener("scroll", () => {
+  // scrollDown() trips this too, but it lands at the bottom, so it re-affirms
+  // the latch rather than clearing it.
+  stickToBottom = isNearBottom();
+}, { passive: true });
+
+// Release on intent rather than on position. Waiting for the scroll to clear
+// the 120px band is what made small upward nudges snap back: the gesture and
+// the auto-scroll were fighting inside that band.
+if (messagesEl) messagesEl.addEventListener("wheel", e => {
+  if (e.deltaY < 0) stickToBottom = false;
+}, { passive: true });
+
+// Touch is the case being complained about — the finger is down and the view
+// keeps jumping. Suspend following for the whole gesture and let the scroll
+// handler settle the latch afterwards.
+if (messagesEl) {
+  messagesEl.addEventListener("touchstart", () => { touching = true; }, { passive: true });
+  // Deliberately does NOT re-measure here. A flick releases the finger while the
+  // view is still near the bottom and momentum carries it up afterwards —
+  // re-arming on touchend would follow the stream for those few frames and kill
+  // the momentum scroll. The scroll handler above is the single authority; it
+  // fires throughout momentum and settles the latch wherever the reader lands.
+  messagesEl.addEventListener("touchend", () => { touching = false; }, { passive: true });
+}
+
+/** Follow the stream only if the reader hasn't taken over. */
+function followStream() {
+  if (stickToBottom && !touching) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 async function sendMessage(text) {
@@ -1846,9 +1894,11 @@ async function sendMessage(text) {
     const backlog = acc.length - shown;
     if (backlog > 0) {
       shown = Math.min(acc.length, shown + Math.max(2, Math.ceil(backlog / 4)));
-      const stick = isNearBottom();
       renderMarkdown(body, acc.slice(0, shown));
-      if (stick) scrollDown();
+      // followStream, not scrollDown: scrollDown re-arms the latch, which would
+      // defeat the point by re-following on the very next frame after a reader
+      // scrolled away.
+      followStream();
     }
     if (shown < acc.length) raf = requestAnimationFrame(pump);
   };
@@ -1901,14 +1951,16 @@ async function sendMessage(text) {
     acc += (acc ? "\n\n" : "") + "⚠️ " + err.message;
   } finally {
     if (raf != null) { cancelAnimationFrame(raf); raf = null; }
-    const stick = isNearBottom();
     body.classList.remove("cursor");
     renderMarkdown(body, acc || "*(no response)*"); // ensure the full text is shown
     shown = acc.length;
     if (acc) history.push({ role: "assistant", content: acc });
     streaming = false;
     sendBtn.disabled = false;
-    if (stick) scrollDown();
+    // Same reasoning as in the pump: if the reader scrolled up to read an
+    // earlier part of this answer, landing the final render shouldn't drag them
+    // back to the end of it.
+    followStream();
     input.focus({ preventScroll: true });
     saveConversation(); // persist this turn (best-effort, non-blocking)
   }
