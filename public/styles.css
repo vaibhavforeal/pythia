@@ -32,9 +32,15 @@
    uses display:grid, which would otherwise keep it on screen after login). */
 [hidden] { display: none !important; }
 
-html, body {
+html {
   margin: 0;
-  height: 100%;
+  min-height: 100%;
+  background-color: var(--app-bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
   background:
     linear-gradient(rgba(244, 250, 255, 0.5), rgba(232, 242, 253, 0.62)),
     url("cosmos-bg.webp") center center / cover no-repeat fixed,
@@ -1422,7 +1428,9 @@ button {
 }
 
 /* Dark cosmic backdrop: heavy dark overlay over the illustration. */
-[data-theme="dark"] html,
+[data-theme="dark"] html {
+  background-color: var(--app-bg);
+}
 [data-theme="dark"] body {
   background:
     linear-gradient(rgba(9, 13, 27, 0.84), rgba(7, 11, 22, 0.9)),
