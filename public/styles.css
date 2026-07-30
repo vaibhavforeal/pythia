@@ -884,7 +884,17 @@ button {
    the shell was sized in vh while this was sized in dvh, so they drifted apart
    by exactly the height of the address bar. Measuring the parent instead makes
    that mismatch structurally impossible rather than something to keep in sync. */
-.chat { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+/* min-height: 0 is what actually makes the chat scroll, and it is not optional.
+   A grid item defaults to min-height: auto, whose content-based minimum WINS over
+   height: 100% — so .chat silently grew to the full height of every message ever
+   rendered (measured: 3345px inside a 704px shell). At that size .chat-scroll's
+   flex: 1 resolves tall enough to hold everything, scrollHeight equals clientHeight,
+   and the list stops scrolling entirely — while the composer is pushed a couple of
+   thousand pixels below the fold and .app's overflow: hidden clips it away. That is
+   why the freeze only appeared once a reply outgrew the viewport, and why it hit
+   desktop as well as mobile. .panel dodges the same trap only because overflow:
+   hidden makes it a scroll container, which zeroes the automatic minimum for free. */
+.chat { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
 
 /* Daily cosmic weather — pinned atop the chat, coloured by the day's mood. */
 .daily-weather {
