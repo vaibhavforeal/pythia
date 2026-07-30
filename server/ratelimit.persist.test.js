@@ -52,7 +52,7 @@ async function start() {
       ...process.env,
       PORT: String(PORT),
       DATA_DIR,
-      SESSION_SECRET: "test-only-secret",
+      SESSION_SECRET: "test-only-secret", ALLOW_EMAIL_SIGNUP: "true",
       CHAT_RPD: "2",
       // Blank, not absent. The child loads .env itself, and dotenv leaves keys
       // that are already present alone — so this is what stops the suite making

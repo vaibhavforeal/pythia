@@ -2075,7 +2075,16 @@ function applyAuthMode() {
     ? "Sign up with email + a password (8+ characters). Takes a sec."
     : "Log in to cast, save and talk to your chart.";
   authSubmit.textContent = reg ? "Create account" : "Log in";
-  $("authSwitchText").textContent = reg ? "Already have an account?" : "New here?";
+  // The server refuses to create unverified accounts unless ALLOW_EMAIL_SIGNUP
+  // is set, so don't offer the route. Handled here rather than at the call site
+  // because this is the one place that renders auth-mode UI, and it runs again
+  // on every showAuth() — setting the text elsewhere would just be overwritten.
+  // Login is deliberately untouched: existing password accounts still work.
+  const noSignup = authProviders.emailSignup === false;
+  $("authSwitchText").textContent = noSignup
+    ? "New here? Use Google above to get started."
+    : (reg ? "Already have an account?" : "New here?");
+  $("authSwitch").hidden = noSignup;
   $("authSwitch").textContent = reg ? "Log in" : "Create an account";
   // Registration is email-only; login also accepts a legacy username.
   const idField = $("authUser");
@@ -2138,6 +2147,13 @@ async function loadProviders() {
     const on = !!(data && data.google);
     if (googleBtn) googleBtn.hidden = !on;
     if (authDivider) authDivider.hidden = !on;
+    // When the server won't create unverified accounts, stop offering the path.
+    // Login stays exactly as it was — every existing password account still
+    // works; only the "Create an account" route disappears.
+    if (authProviders.emailSignup === false) {
+      authMode = "login"; // applyAuthMode renders the rest — see it for why
+      applyAuthMode();
+    }
     renderSoulId(); // the "how do I get one" hint depends on what's switched on
   } catch {
     /* leave the Google button hidden */

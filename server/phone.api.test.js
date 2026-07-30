@@ -63,7 +63,7 @@ test.before(async () => {
   srv = spawn(process.execPath, [path.join(__dirname, "index.js")], {
     env: {
       ...process.env, PORT: String(PORT), DATA_DIR,
-      SESSION_SECRET: "test-only-secret", OTP_SECRET: "test-otp-secret",
+      SESSION_SECRET: "test-only-secret", ALLOW_EMAIL_SIGNUP: "true", OTP_SECRET: "test-otp-secret",
       SMS_PROVIDER: "console", NODE_ENV: "test"
     },
     stdio: ["ignore", "pipe", "pipe"]

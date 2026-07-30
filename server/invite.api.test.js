@@ -43,7 +43,7 @@ async function api(method, url, body, opts = {}) {
 
 test.before(async () => {
   srv = spawn(process.execPath, [path.join(__dirname, "index.js")], {
-    env: { ...process.env, PORT: String(PORT), DATA_DIR, SESSION_SECRET: "test-only-secret" },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR, SESSION_SECRET: "test-only-secret", ALLOW_EMAIL_SIGNUP: "true" },
     stdio: ["ignore", "pipe", "pipe"]
   });
   srv.stdout.on("data", d => (serverLog += d));

@@ -42,7 +42,7 @@ const devices = () => JSON.parse(fs.readFileSync(path.join(DATA_DIR, "devices.js
 test.before(async () => {
   srv = spawn(process.execPath, [path.join(__dirname, "index.js")], {
     env: {
-      ...process.env, PORT: String(PORT), DATA_DIR, SESSION_SECRET: "test-only-secret",
+      ...process.env, PORT: String(PORT), DATA_DIR, SESSION_SECRET: "test-only-secret", ALLOW_EMAIL_SIGNUP: "true",
       NODE_ENV: "test", PUSH_PROVIDER: "console", CRON_SECRET,
       PUSH_HOUR_LOCAL: String(SEND_HOUR)
     },

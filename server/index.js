@@ -29,6 +29,11 @@ const push = require("./push");
 // otherwise deploying this would break signup for everyone for several days.
 const REQUIRE_PHONE = String(process.env.REQUIRE_PHONE || "").toLowerCase() === "true";
 
+// Closed by default — full reasoning at the /api/auth/register route. Declared
+// here because /api/auth/providers reads it and is defined earlier in the file.
+const ALLOW_EMAIL_SIGNUP =
+  String(process.env.ALLOW_EMAIL_SIGNUP || "").trim().toLowerCase() === "true";
+
 /**
  * Assign a Soul ID, retrying on the (rare) collision. Frozen once set: an
  * identifier someone has already shared must not change under them.
@@ -380,8 +385,16 @@ app.use("/api", auth.checkOrigin, (req, res, next) => {
 });
 
 // Which login methods the UI should offer (Google appears only when configured).
+// emailSignup lets the UI stop offering a path the server will refuse. The
+// server check is the one that matters; this only avoids showing a form that
+// can't succeed.
 app.get("/api/auth/providers", (_req, res) =>
-  res.json({ google: oauth.enabled, phone: sms.enabled(), requirePhone: REQUIRE_PHONE }));
+  res.json({
+    google: oauth.enabled,
+    phone: sms.enabled(),
+    requirePhone: REQUIRE_PHONE,
+    emailSignup: ALLOW_EMAIL_SIGNUP
+  }));
 
 // --- Phone verification ------------------------------------------------------
 // Public: used both by signup (no session yet) and by an existing account
@@ -537,8 +550,34 @@ app.get("/api/account", async (req, res) => {
 
 // New accounts register with an email address (usernames are legacy — existing
 // username accounts still log in below).
+// Creating an account with an unverified email address is closed by default.
+//
+// Nothing here ever proved the person owned the address — it checked the format
+// and that it was unused, then issued a session. So anyone could claim anyone
+// else's address, and after the Google linking fix that became permanent: the
+// real owner's later Google sign-in is refused with email_taken, locking them
+// out of their own address rather than handing them a squatter's account.
+//
+// The same hole had a second edge. An unverified account can use chat, the only
+// endpoint that costs money, and each one carries its own CHAT_RPD budget — so
+// minting accounts was a way to mint chat allowance without guessing a single
+// password.
+//
+// Both close the same way: an account now requires an identity someone has
+// actually proven. Google is verified by Google; phone will be verified by SMS
+// once DLT clears. LOGIN is untouched, so every existing password account keeps
+// working exactly as before — this only stops NEW unverified ones being made.
+//
+// Set ALLOW_EMAIL_SIGNUP=true to reopen it, which is worth doing only once email
+// verification exists to sit behind it. (Declared near REQUIRE_PHONE at the top,
+// because /api/auth/providers reads it and is defined earlier.)
 app.post("/api/auth/register", auth.rateLimit, async (req, res) => {
   try {
+    if (!ALLOW_EMAIL_SIGNUP) {
+      return res.status(403).json({
+        error: "Email sign-up is closed — continue with Google to create an account."
+      });
+    }
     const { email, password } = req.body || {};
     const e = normalizeEmail(email);
     if (!isValidEmail(e)) return res.status(400).json({ error: "Enter a valid email address." });
