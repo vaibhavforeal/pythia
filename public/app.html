@@ -27,7 +27,9 @@
     <script src="vendor/marked.umd.js"></script>
     <script src="vendor/purify.min.js"></script>
   </head>
-  <body>
+  <!-- app-shell locks page scrolling: this is the one page that is a fixed
+       100dvh shell scrolling internally, rather than a document that scrolls. -->
+  <body class="app-shell">
     <div class="app">
       <button type="button" id="panelToggle" class="panel-toggle" aria-label="Show chart panel" aria-expanded="false" hidden>☰</button>
       <div id="panelScrim" class="panel-scrim"></div>

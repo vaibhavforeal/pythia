@@ -35,7 +35,6 @@
 html, body {
   margin: 0;
   height: 100%;
-  overflow: hidden;
   background:
     linear-gradient(rgba(244, 250, 255, 0.5), rgba(232, 242, 253, 0.62)),
     url("cosmos-bg.webp") center center / cover no-repeat fixed,
@@ -61,6 +60,18 @@ html, body {
   height: 100dvh;
   overflow: hidden;
 }
+
+/* Scroll lock for the app shell ONLY.
+   This was previously on the shared `html, body` rule, which froze every page in
+   the site — the landing page, /privacy, /terms and the public invite page are
+   ordinary scrolling documents, so everything below the fold became unreachable.
+   The lock is wanted here (the shell is exactly 100dvh and scrolls internally
+   via .chat-scroll and .panel-scroll) and wanted nowhere else.
+   Only body needs it: when html's overflow is `visible`, the body's computed
+   overflow is propagated to the viewport, so this locks the page without
+   putting overflow: hidden on the root — which is the form that tends to break
+   nested touch scrolling on mobile. */
+body.app-shell { overflow: hidden; }
 
 /* ---------- Left panel ---------- */
 .panel {
