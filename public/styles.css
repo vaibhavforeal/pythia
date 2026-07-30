@@ -787,7 +787,16 @@ button {
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm);
 }
 /* No header button above it any more, so the panel carries its own top pad. */
-.nerd-panel { padding: 16px; }
+/* overflow-x here rather than on .nerd-card, which needs overflow: hidden to
+   clip its children to the 18px radius. That clip is the reason this matters:
+   anything wider than the card is silently cut off with no scrollbar and no
+   sign that data is missing.
+   Nothing currently overflows — every table here is three or four narrow
+   columns, and the widest row (a transit line like "Sagittarius 29°59'") still
+   fits a 320px phone. This is insurance against the failure MODE, not a fix for
+   a live bug: add a column or a longer label later and the result should be a
+   scrollbar, not vanished bindu values nobody notices. */
+.nerd-panel { padding: 16px; overflow-x: auto; }
 /* Host in the chat column — takes the centering the old feed wrapper gave it. */
 #nerdHost { max-width: 720px; margin: 0 auto; padding: 0 24px; }
 #nerdHost:empty { display: none; }
