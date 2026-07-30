@@ -1616,3 +1616,22 @@ button {
   white-space: nowrap;
 }
 .soul-link:hover { opacity: 0.8; }
+
+/* Offline banner. Fixed to the bottom so it never displaces the chat input or
+   the chart, and above the app's own layers so it can't be scrolled away from. */
+.offline-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--ink, #12213a);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}

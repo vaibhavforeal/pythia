@@ -136,5 +136,8 @@
       <p class="foot-copy">© 2026 Pythia</p>
     </footer>
     <script src="theme.js"></script>
+    <!-- The install prompt can fire here too, so the worker registers from the
+         landing page as well as from /app. -->
+    <script src="sw-register.js"></script>
   </body>
 </html>
