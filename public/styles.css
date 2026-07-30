@@ -49,7 +49,15 @@ html, body {
 .app {
   display: grid;
   grid-template-columns: 336px 1fr;
+  /* 100vh on mobile Chrome is the LARGE viewport — the height with the address
+     bar retracted — not what you can currently see. Sizing the shell to it makes
+     the shell taller than the visible area, which hands <body> 60-100px of
+     scroll that should not exist: scrolling then drags the whole app, sliding
+     the composer and top bar off-screen, instead of scrolling the message list.
+     dvh tracks the visible area as the bar shows and hides. The 100vh line above
+     it is the fallback for browsers that don't parse dvh, and must stay first. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -841,7 +849,12 @@ button {
    refuses to shrink below its content's min-content width — so one wide table or
    long token inside the chat pushes the 1fr column past the viewport and the
    whole page picks up a horizontal scrollbar. */
-.chat { display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+/* height: 100% of the grid area, deliberately NOT a viewport unit. .app already
+   resolves the viewport once; re-deriving it here is what let the two disagree —
+   the shell was sized in vh while this was sized in dvh, so they drifted apart
+   by exactly the height of the address bar. Measuring the parent instead makes
+   that mismatch structurally impossible rather than something to keep in sync. */
+.chat { display: flex; flex-direction: column; height: 100%; min-width: 0; }
 
 /* Daily cosmic weather — pinned atop the chat, coloured by the day's mood. */
 .daily-weather {
@@ -1061,7 +1074,13 @@ button {
 /* ---------- Auth overlay ---------- */
 .auth-overlay {
   position: fixed; inset: 0; z-index: 300;
-  display: grid; place-items: center; padding: 20px; overflow-y: auto; max-height: 100vh;
+  /* dvh for the same reason as .app: this is the first screen a phone user sees,
+     and clamped to 100vh it can stand taller than the visible area, pushing the
+     submit button under the fold. It scrolls internally, so it must be bounded
+     by what's actually on screen. */
+  display: grid; place-items: center; padding: 20px; overflow-y: auto;
+  max-height: 100vh;
+  max-height: 100dvh;
   background:
     linear-gradient(rgba(255, 255, 255, 0.32), rgba(232, 242, 253, 0.5)),
     url("cosmos-bg.webp") center center / cover no-repeat fixed;
@@ -1123,7 +1142,9 @@ button {
 
   /* Chat takes the full width; the sidebar becomes a slide-in drawer. */
   .app { grid-template-columns: 1fr; }
-  .chat { height: 100vh; height: 100dvh; }
+  /* The .chat height override that used to live here is gone: it was the only
+     place dvh was applied, which is why the bug was mobile-only and why .app and
+     .chat disagreed. Both are handled once, at their own rules. */
 
   .panel {
     position: fixed; top: 0; bottom: 0; left: 0;
@@ -1220,7 +1241,9 @@ button {
 }
 
 /* ================= Public site: landing + legal pages ================= */
-.site { display: flex; flex-direction: column; min-height: 100vh; }
+/* svh, not dvh: a scrolling page sized in dvh reflows every time the address
+   bar hides. svh is the stable floor and never creates phantom scroll. */
+.site { display: flex; flex-direction: column; min-height: 100vh; min-height: 100svh; }
 
 .site-nav {
   display: flex; align-items: center; justify-content: space-between;
@@ -1411,7 +1434,8 @@ button {
 /* ================= Public invite page (/i/<token>) ================= */
 /* Standalone page with no app shell: a stranger with a link, no account. */
 .invite-page {
-  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh; min-height: 100svh; /* see .site — stable floor, no phantom scroll */
+  display: flex; flex-direction: column; align-items: center;
   padding: 20px 16px 32px; background: var(--bg);
 }
 .invite-brand {
