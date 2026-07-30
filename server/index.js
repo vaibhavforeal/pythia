@@ -71,6 +71,47 @@ const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const CHAT_EFFORT = EFFORTS.has((process.env.CHAT_EFFORT || "").trim().toLowerCase())
   ? process.env.CHAT_EFFORT.trim().toLowerCase()
   : "low";
+
+// Per-million-token rates for the deployed model, used only to turn the token
+// counts below into a cost figure. Deliberately configuration rather than a
+// constant: they differ per model and change over time, and a hard-coded number
+// that silently goes stale is worse than no number. Unset → tokens only.
+const rate = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+const PRICE_IN = rate(process.env.CHAT_PRICE_IN_PER_MTOK);
+const PRICE_OUT = rate(process.env.CHAT_PRICE_OUT_PER_MTOK);
+
+/**
+ * One line per chat request, so the only paid call in the app is observable.
+ *
+ * Cache multipliers are the published ones: reads bill at ~0.1x input, writes at
+ * 1.25x for the 5-minute TTL this app uses (a 1-hour TTL would be 2x). Treat the
+ * cost as indicative — it's arithmetic on the provider's counters, not a bill.
+ */
+function logChatUsage(u, turns) {
+  const prompt = u.input + u.cacheRead + u.cacheWrite;
+  const parts = [
+    `model=${MODEL}`,
+    `effort=${CHAT_EFFORT}`,
+    `turns=${turns}`,
+    `prompt=${prompt}`,
+    `(fresh=${u.input} cached=${u.cacheRead} written=${u.cacheWrite})`,
+    `output=${u.output}`
+  ];
+  if (PRICE_IN && PRICE_OUT) {
+    const cost = (u.input * PRICE_IN + u.cacheRead * PRICE_IN * 0.1 +
+      u.cacheWrite * PRICE_IN * 1.25 + u.output * PRICE_OUT) / 1e6;
+    parts.push(`cost=$${cost.toFixed(5)}`);
+  }
+  if (u.truncated) parts.push("TRUNCATED(max_tokens)");
+  console.log("  💬 chat:", parts.join(" "));
+
+  // The symptom of a silently broken cache. Turn 1 legitimately writes rather
+  // than reads; a later turn reading nothing means the prefix changed between
+  // requests, and every one of those tokens is being paid for at full price.
+  if (turns > 1 && u.cacheRead === 0 && prompt > 0) {
+    console.warn(`  ⚠  chat: no cache read on turn ${turns} — prompt prefix may be changing between requests`);
+  }
+}
 const PORT = process.env.PORT || 3030;
 
 const SKILL_PROMPT = loadSkill();
@@ -1566,6 +1607,11 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
     const decoder = new TextDecoder();
     let buf = "";
     let refused = false;
+    // Token accounting arrives split across two frames: message_start carries the
+    // input side (including the cache counters), message_delta the final output
+    // count. Both were being dropped, which left the only paid call in the app
+    // with no cost signal at all — CHAT_RPD was being set against an estimate.
+    const usage = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1585,8 +1631,19 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
           try { evt = JSON.parse(data); } catch { continue; }
           if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
             send({ text: evt.delta.text });
-          } else if (evt.type === "message_delta" && evt.delta && evt.delta.stop_reason === "refusal") {
-            refused = true;
+          } else if (evt.type === "message_start" && evt.message && evt.message.usage) {
+            const u = evt.message.usage;
+            usage.input = u.input_tokens || 0;
+            usage.cacheRead = u.cache_read_input_tokens || 0;
+            usage.cacheWrite = u.cache_creation_input_tokens || 0;
+            usage.output = u.output_tokens || 0; // usually 0 here; message_delta is authoritative
+          } else if (evt.type === "message_delta") {
+            // Cumulative, not incremental — assign rather than add.
+            if (evt.usage && typeof evt.usage.output_tokens === "number") {
+              usage.output = evt.usage.output_tokens;
+            }
+            if (evt.delta && evt.delta.stop_reason === "refusal") refused = true;
+            if (evt.delta && evt.delta.stop_reason === "max_tokens") usage.truncated = true;
           } else if (evt.type === "error") {
             const e = evt.error || {};
             send({
@@ -1602,6 +1659,7 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
     if (refused) send({ error: "The model declined to answer that request." });
     send({ done: true });
     res.end();
+    logChatUsage(usage, messages.length);
   } catch (err) {
     console.error("chat error:", err);
     send({ error: "Chat request failed: " + (err && err.message ? err.message : "unknown error") });
