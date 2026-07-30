@@ -837,7 +837,11 @@ button {
 .ship-breakdown { margin-top: 4px; }
 
 /* ---------- Chat ---------- */
-.chat { display: flex; flex-direction: column; height: 100vh; }
+/* min-width: 0 is load-bearing. A grid item defaults to min-width: auto, which
+   refuses to shrink below its content's min-content width — so one wide table or
+   long token inside the chat pushes the 1fr column past the viewport and the
+   whole page picks up a horizontal scrollbar. */
+.chat { display: flex; flex-direction: column; height: 100vh; min-width: 0; }
 
 /* Daily cosmic weather — pinned atop the chat, coloured by the day's mood. */
 .daily-weather {
@@ -882,7 +886,13 @@ button {
 }
 .msg.user .avatar { background: var(--user); color: var(--sky-deep); font-size: 10px; }
 .msg.assistant .avatar { background: var(--sky); color: var(--on-accent); }
-.msg .body { flex: 1; line-height: 1.7; color: var(--ink); }
+/* Same rule as .chat, and this is the one that actually bit. A flex item also
+   defaults to min-width: auto, so `.body` could not shrink below the widest
+   thing the model emitted. That is why `.body pre` already had overflow-x: auto
+   and still overflowed: the scrollbar never engaged, because the element was
+   allowed to grow to whatever width it wanted instead.
+   overflow-wrap covers the other case — a long URL or unbroken token. */
+.msg .body { flex: 1; min-width: 0; overflow-wrap: break-word; line-height: 1.7; color: var(--ink); }
 
 /* Markdown styling inside assistant messages */
 .body h1, .body h2, .body h3 { font-family: var(--font-head); font-weight: 600; color: var(--sky-deep); margin: 14px 0 7px; line-height: 1.3; }
@@ -901,8 +911,14 @@ button {
   padding: 10px 12px; overflow-x: auto;
 }
 .body pre code { background: none; color: var(--ink); padding: 0; }
-.body table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 13px; }
-.body th, .body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+/* table-layout: fixed rather than a horizontal scroller. Tables the model emits
+   in chat are two to five columns of short values, so fitting the width and
+   wrapping reads better than a scrollbar inside a message — and it keeps the
+   full-width look these already had. Without it, a table's intrinsic column
+   widths win over `width: 100%` and it overflows regardless of the min-width
+   fixes above. */
+.body table { border-collapse: collapse; margin: 10px 0; width: 100%; table-layout: fixed; font-size: 13px; }
+.body th, .body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; overflow-wrap: anywhere; }
 .body th { background: var(--sky-soft); color: var(--sky-deep); }
 .body blockquote {
   border-left: 3px solid var(--sky); margin: 10px 0; padding: 2px 14px;
