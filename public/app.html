@@ -193,6 +193,13 @@
           </label>
         </div>
 
+        <!-- Where the nerd tables dock on phones. They render into #nerdHost,
+             which lives in the chat column on desktop because it's the wide one;
+             on a phone both columns are full-width, so the tables belong under
+             the switch that reveals them. app.js moves the host between the two
+             on viewport change. -->
+        <div id="nerdSlot" data-pane="chart"></div>
+
         <!-- ===== Ship check (Guna Milan / Ashtakoot compatibility) ===== -->
         <div id="matchCard" class="match-card" data-pane="friends" hidden>
           <h3>♡ Ship check</h3>

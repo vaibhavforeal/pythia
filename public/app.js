@@ -90,6 +90,22 @@ function setTab(tab) {
   if (panelScroll && tab !== "chat") panelScroll.scrollTop = paneScroll[tab] || 0;
 }
 
+// The nerd tables are wide, which is why they render into the chat column —
+// but that reasoning is a desktop one. On a phone both columns are full-width,
+// and a table that appears behind another tab makes the switch look broken, so
+// the host docks under the switch that controls it. Moving the node keeps one
+// render target: everything that writes to #nerdHost is unaware of any of this.
+const nerdHost = $("nerdHost");
+const nerdSlot = $("nerdSlot");
+const narrow = window.matchMedia("(max-width: 820px)");
+function placeNerdHost() {
+  if (!nerdHost || !nerdSlot || !messagesEl) return;
+  if (narrow.matches) nerdSlot.appendChild(nerdHost);
+  else if (nerdHost.parentElement !== messagesEl) messagesEl.insertBefore(nerdHost, messagesEl.firstChild);
+}
+placeNerdHost();
+narrow.addEventListener("change", placeNerdHost);
+
 // Saved chats, from the chat itself (phones only — on desktop the list is
 // already in the sidebar and this button isn't rendered).
 const historyBtn = $("historyBtn");
@@ -1427,12 +1443,10 @@ function setupNerdSwitch() {
     const card = document.querySelector("#nerdHost .nerd-card");
     if (card) card.hidden = !nerdOpen;
     // Jumping to the tables makes the switch feel connected to something that
-    // is otherwise off-screen at the bottom of the reading — and on mobile the
-    // tables are in the chat column, i.e. behind a different tab entirely.
-    if (nerdOpen && card) {
-      setTab("chat");
-      card.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    // is otherwise off-screen at the bottom of the reading. They're in the same
+    // column as the switch either way (see placeNerdHost), so this scrolls
+    // rather than navigates.
+    if (nerdOpen && card) card.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 setupNerdSwitch();

@@ -1321,6 +1321,9 @@ body.kb-open .tab-bar { transform: translateY(110%); }
 
   .tab-bar { display: flex; }
   .composer-history { display: grid; }
+  /* Docked in the chart pane here, which owns the gutters — drop the chat
+     column's centering and side padding. */
+  #nerdHost { max-width: none; padding: 0; margin-bottom: 16px; }
   .app[data-tab="chats"] .conv-close {
     display: grid; place-items: center;
     width: 28px; height: 24px; font-size: 12px; color: var(--muted);
