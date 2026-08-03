@@ -51,19 +51,90 @@ let peopleById = {};
 let currentConvId = null; // the saved conversation the chat is currently writing to
 const pad = n => String(n).padStart(2, "0");
 
-// Mobile slide-in drawer for the chart / compatibility panel (no effect on desktop)
+// ---- Mobile tabs ----------------------------------------------------------
+// On phones the sidebar isn't a drawer any more: it's three of the four
+// bottom-bar destinations (chart / friends / profile), and the fourth is the
+// chat column itself. "chats" is a fifth pane with no tab of its own — saved
+// chats belong beside the conversation, so the composer's history button opens
+// them and the Chat tab stays lit underneath.
+// Above 820px the CSS ignores every bit of this and the sidebar is simply on
+// screen, so these calls are safe to make unconditionally. The chat is overlaid
+// rather than swapped out, so switching tabs never resets the message scroll or
+// interrupts a reply that's still streaming.
 const appEl = document.querySelector(".app");
-const panelToggle = $("panelToggle");
-const panelClose = $("panelClose");
-const panelScrim = $("panelScrim");
 const mobileBar = $("mobileBar");
-function setPanelOpen(open) {
-  appEl.classList.toggle("panel-open", open);
-  if (panelToggle) panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
+const tabBar = $("tabBar");
+const panelScroll = document.querySelector(".panel-scroll");
+const TABS = ["chat", "chart", "friends", "profile", "chats"];
+let activeTab = "chat";
+// The panes share one scroll container, so each one's offset is kept here —
+// otherwise leaving a tall pane strands a short one scrolled past its end.
+const paneScroll = { chart: 0, friends: 0, profile: 0, chats: 0 };
+let tabPicked = false; // the user has chosen a view, so nothing async may override it
+
+function setTab(tab) {
+  if (!TABS.includes(tab)) return;
+  if (panelScroll && activeTab !== "chat") paneScroll[activeTab] = panelScroll.scrollTop;
+  activeTab = tab;
+  appEl.setAttribute("data-tab", tab);
+  // The history view is a chat sub-view, so the Chat tab stays the lit one.
+  const lit = tab === "chats" ? "chat" : tab;
+  if (tabBar) {
+    for (const b of tabBar.querySelectorAll(".tab")) {
+      const on = b.dataset.tab === lit;
+      b.classList.toggle("is-active", on);
+      if (on) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
+  }
+  if (panelScroll && tab !== "chat") panelScroll.scrollTop = paneScroll[tab] || 0;
 }
-if (panelToggle) panelToggle.addEventListener("click", () => setPanelOpen(!appEl.classList.contains("panel-open")));
-if (panelClose) panelClose.addEventListener("click", () => setPanelOpen(false));
-if (panelScrim) panelScrim.addEventListener("click", () => setPanelOpen(false));
+
+// Saved chats, from the chat itself (phones only — on desktop the list is
+// already in the sidebar and this button isn't rendered).
+const historyBtn = $("historyBtn");
+if (historyBtn) {
+  historyBtn.addEventListener("click", () => {
+    tabPicked = true;
+    setTab(activeTab === "chats" ? "chat" : "chats");
+  });
+}
+// The pane covers the composer, so it carries its own way back.
+const convClose = $("convClose");
+if (convClose) convClose.addEventListener("click", () => setTab("chat"));
+
+if (tabBar) {
+  tabBar.addEventListener("click", e => {
+    const btn = e.target.closest(".tab");
+    if (!btn || !btn.dataset.tab) return;
+    tabPicked = true;
+    setTab(btn.dataset.tab);
+  });
+}
+
+// A count on the Friends tab for the one thing that happens while you're
+// somewhere else. n = 0 clears it.
+function setTabBadge(tab, n) {
+  const badge = tabBar && tabBar.querySelector(`.tab[data-tab="${tab}"] .tab-badge`);
+  if (!badge) return;
+  badge.textContent = n > 9 ? "9+" : String(n);
+  badge.hidden = !n;
+}
+
+// The composer and the tab bar want the same strip of screen once the on-screen
+// keyboard is up, so the bar yields it (body.kb-open in styles.css).
+// Measured off visualViewport rather than inferred from focus: a focus event
+// says nothing about the keyboard — enableChat() focuses the composer after
+// every cast, and a programmatic focus opens no keyboard on a phone — so a
+// focus-driven version hides the navigation with nothing taking its place.
+// The threshold clears the address bar showing and hiding (~60px).
+const vv = window.visualViewport;
+if (vv) {
+  const syncKeyboard = () =>
+    document.body.classList.toggle("kb-open", window.innerHeight - vv.height > 140);
+  vv.addEventListener("resize", syncKeyboard);
+  syncKeyboard();
+}
 
 if (window.marked) {
   marked.setOptions({ breaks: true, gfm: true });
@@ -410,6 +481,7 @@ async function loadFriendRequests() {
     const res = await fetch("/api/friends/requests");
     if (!res.ok) return;
     const { requests } = await res.json();
+    setTabBadge("friends", (requests || []).length);
     if (!requests || !requests.length) { host.innerHTML = ""; return; }
     host.innerHTML =
       `<div class="fr-title">wants to connect</div>` +
@@ -1355,8 +1427,12 @@ function setupNerdSwitch() {
     const card = document.querySelector("#nerdHost .nerd-card");
     if (card) card.hidden = !nerdOpen;
     // Jumping to the tables makes the switch feel connected to something that
-    // is otherwise off-screen at the bottom of the reading.
-    if (nerdOpen && card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    // is otherwise off-screen at the bottom of the reading — and on mobile the
+    // tables are in the chat column, i.e. behind a different tab entirely.
+    if (nerdOpen && card) {
+      setTab("chat");
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   });
 }
 setupNerdSwitch();
@@ -1454,14 +1530,14 @@ function handleCta(kind) {
   if (q) sendMessage(q);
 }
 
-// Reveal the Ship-check form (opens the sidebar drawer on mobile) and scroll to
-// it. This is the only thing that unhides it — the form is otherwise absent, so
-// the ship-check card is the single entry point.
+// Reveal the Ship-check form (switching to the Friends tab on mobile, where the
+// card lives) and scroll to it. This is the only thing that unhides it — the
+// form is otherwise absent, so the ship-check card is the single entry point.
 function openShipCheck() {
   const card = $("matchCard");
   if (!card) return;
   card.hidden = false;
-  setPanelOpen(true);
+  setTab("friends");
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   const first = $("m_dob");
   if (first) setTimeout(() => first.focus({ preventScroll: true }), 320);
@@ -1882,7 +1958,7 @@ function followStream() {
 
 async function sendMessage(text) {
   if (streaming || !chart) return;
-  setPanelOpen(false); // on mobile, close the drawer so the reply is visible
+  setTab("chat"); // on mobile, the reply is on the chat tab — go watch it land
   streaming = true;
   input.value = "";
   input.style.height = "auto";
@@ -1988,9 +2064,9 @@ function showAuth() {
     pendingAuthError = null;
   }
   authOverlay.hidden = false;
-  panelToggle.hidden = true; // keep the drawer toggle off the login screen
-  if (mobileBar) mobileBar.hidden = true; // and the branding bar (login has its own)
-  setPanelOpen(false);
+  if (tabBar) tabBar.hidden = true; // no navigation until there's something to navigate
+  if (mobileBar) mobileBar.hidden = true; // and no branding bar (login has its own)
+  setTab("chat");
   $("authUser").focus();
 }
 
@@ -2000,7 +2076,7 @@ function onAuthed(user) {
   $("accountName").textContent = user.name;
   peopleCard.hidden = false;
   convCard.hidden = false;
-  panelToggle.hidden = false; // reveal the mobile drawer toggle
+  if (tabBar) tabBar.hidden = false; // reveal the mobile bottom bar
   if (mobileBar) mobileBar.hidden = false; // and the fixed mobile branding bar
   loadPeople();
   loadConversations();
@@ -2010,7 +2086,13 @@ function onAuthed(user) {
   // Your chart sticks: bring it straight back rather than making you cast again.
   // The account carries the server-side copy, which beats this browser's cache.
   loadAccount().then(acct => {
-    restoreMyChart(acct && acct.birth).then(() => loadFriends());
+    restoreMyChart(acct && acct.birth).then(ok => {
+      // Nothing to restore means nothing to read, so on mobile open on the tab
+      // that has the form rather than an empty chat with a pointer to it. This
+      // lands a round trip late, so it defers to a tab the user already picked.
+      if (!ok && !tabPicked) setTab("chart");
+      loadFriends();
+    });
   });
 }
 
@@ -2271,7 +2353,9 @@ function loadPerson(p) {
   // Opening a saved person is a one-off view, not a change of profile — your
   // own chart stays in myBirth and is one "back to mine" away.
   castChart(lastInput, true).then(ok => {
-    if (ok) setViewing(p.name === "Unnamed" ? "their chart" : p.name);
+    if (!ok) return;
+    setViewing(p.name === "Unnamed" ? "their chart" : p.name);
+    setTab("chart"); // the reading they just asked for is on the Chart tab
   });
 }
 
@@ -2393,7 +2477,7 @@ async function loadConversation(id) {
     renderHistory();
     enableChat();
     highlightActiveConv();
-    setPanelOpen(false); // on mobile, reveal the chat
+    setTab("chat"); // on mobile, the restored chat is the point — go to it
     scrollDown();
   } catch {
     /* transient — the sidebar item stays, user can retry */
@@ -2408,7 +2492,7 @@ function newChat() {
   clearConversation();
   enableChat();
   highlightActiveConv();
-  setPanelOpen(false);
+  setTab("chat");
 }
 if (newChatBtn) newChatBtn.addEventListener("click", newChat);
 

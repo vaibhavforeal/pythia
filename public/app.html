@@ -30,9 +30,10 @@
   <!-- app-shell locks page scrolling: this is the one page that is a fixed
        100dvh shell scrolling internally, rather than a document that scrolls. -->
   <body class="app-shell">
-    <div class="app">
-      <button type="button" id="panelToggle" class="panel-toggle" aria-label="Show chart panel" aria-expanded="false" hidden>☰</button>
-      <div id="panelScrim" class="panel-scrim"></div>
+    <!-- data-tab drives the mobile layout only: on phones the sidebar becomes
+         one of four bottom-bar tabs, on desktop it is inert and everything is
+         on screen at once. -->
+    <div class="app" data-tab="chat">
       <!-- Fixed branding bar for mobile (the sidebar's own logo is hidden there) -->
       <header id="mobileBar" class="mobile-bar" hidden>
         <img class="brand-mark" src="logo.png" alt="Pythia" />
@@ -52,11 +53,14 @@
           </div>
           <button type="button" class="pwa-install-chip" data-pwa-install title="Install Pythia App" hidden>📲 Install</button>
           <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle dark mode"></button>
-          <button type="button" id="panelClose" class="panel-close" aria-label="Close panel">✕</button>
         </div>
 
+        <!-- Every direct child below carries data-pane: on phones one pane is on
+             screen at a time (chart / friends / profile from the bottom bar,
+             chats from the composer's history button), on desktop the attribute
+             does nothing and the sidebar scrolls as one column. -->
         <div class="panel-scroll">
-        <div class="pwa-install-card" id="pwaInstallCard" hidden>
+        <div class="pwa-install-card" id="pwaInstallCard" data-pane="profile" hidden>
           <div class="pwa-ic">📲</div>
           <div class="pwa-text">
             <b>Get the Pythia App</b>
@@ -65,7 +69,7 @@
           <button type="button" class="pwa-btn" data-pwa-install>Install</button>
         </div>
 
-        <div class="account" id="account" hidden>
+        <div class="account" id="account" data-pane="profile" hidden>
           <span class="account-user">Signed in as <b id="accountName"></b></span>
           <span class="streak" id="streakChip" hidden><span aria-hidden="true">🔥</span><b class="streak-n">0</b></span>
           <button type="button" id="logoutBtn" class="logout">Log out</button>
@@ -73,11 +77,11 @@
 
         <!-- Your chart sticks once cast, so this is an edit affordance rather
              than a prompt to cast again. Hidden until there's a chart. -->
-        <button type="button" class="form-toggle" id="formToggle" aria-expanded="true" aria-controls="birthForm" hidden>
+        <button type="button" class="form-toggle" id="formToggle" data-pane="chart" aria-expanded="true" aria-controls="birthForm" hidden>
           <span class="ft-label">edit my birth details</span><span class="ft-caret">▾</span>
         </button>
 
-        <form id="birthForm" class="birth-form">
+        <form id="birthForm" class="birth-form" data-pane="chart">
           <h2>your birth deets</h2>
 
           <label>Name
@@ -124,19 +128,19 @@
 
         <!-- Whose chart is on screen. Your own is the profile and persists;
              anyone else is a one-off view that is never saved as your profile. -->
-        <div class="profile-head" id="profileHead" hidden>
+        <div class="profile-head" id="profileHead" data-pane="chart" hidden>
           <span class="ph-who" id="phWho">your chart</span>
           <button type="button" class="ph-back" id="backToMine" hidden>back to mine</button>
         </div>
 
         <!-- Your reading, as a persistent profile. Rendered on every cast. -->
-        <div class="profile" id="profile" hidden></div>
+        <div class="profile" id="profile" data-pane="chart" hidden></div>
 
-        <button type="button" class="check-other" id="checkOther" hidden>check someone else ↗</button>
+        <button type="button" class="check-other" id="checkOther" data-pane="chart" hidden>check someone else ↗</button>
 
         <!-- Invite link: they cast their own chart on a public page, no account
              needed, and you both get the compatibility score. -->
-        <div class="invite-box" id="inviteBox" hidden>
+        <div class="invite-box" id="inviteBox" data-pane="friends" hidden>
           <div class="aspects-title">Invite a friend</div>
           <p class="invite-hint">Send a link — they drop their birth details, you both get the score. No account needed on their side.</p>
           <div class="role-toggle role-mini">
@@ -155,7 +159,7 @@
 
         <!-- Your constellation: Soul ID, incoming requests, and everyone you're
              connected to with today's flow. -->
-        <div class="friends-card" id="friendsCard" hidden>
+        <div class="friends-card" id="friendsCard" data-pane="friends" hidden>
           <div class="aspects-title">Your constellation <span class="fr-count" id="friendCount"></span></div>
 
           <div class="soul-row" id="soulRow" hidden>
@@ -178,7 +182,7 @@
 
         <!-- Nerd mode: reveals the full expert tables in the chat column.
              Hidden until a chart exists, like the ship check below. -->
-        <div class="nerd-switch" id="nerdSwitch" hidden>
+        <div class="nerd-switch" id="nerdSwitch" data-pane="chart" hidden>
           <label class="switch-row">
             <span class="switch-text">
               <b>✦ nerd mode</b>
@@ -190,7 +194,7 @@
         </div>
 
         <!-- ===== Ship check (Guna Milan / Ashtakoot compatibility) ===== -->
-        <div id="matchCard" class="match-card" hidden>
+        <div id="matchCard" class="match-card" data-pane="friends" hidden>
           <h3>♡ Ship check</h3>
           <p class="ship-blurb">will it actually work? drop their birth deets and find out.</p>
           <form id="matchForm" class="match-form">
@@ -236,7 +240,7 @@
           <div id="matchResult" class="match-result" hidden></div>
         </div>
 
-        <div id="peopleCard" class="people-card" hidden>
+        <div id="peopleCard" class="people-card" data-pane="profile" hidden>
           <div class="aspects-title">Saved people
             <button type="button" id="savePersonBtn" class="save-person" disabled title="Save the current birth details">★ Save current</button>
           </div>
@@ -245,15 +249,20 @@
           <p class="err" id="peopleErr" hidden></p>
         </div>
 
-        <div id="convCard" class="people-card" hidden>
+        <!-- Reached from the chat's own history button rather than the bottom
+             bar, so it gets a pane of its own that no tab owns. -->
+        <div id="convCard" class="people-card" data-pane="chats" hidden>
           <div class="aspects-title">Saved chats
             <button type="button" id="newChatBtn" class="save-person" disabled title="Start a new chat about the current chart">＋ New</button>
+            <!-- Only in the mobile history view, where this pane covers the
+                 composer the history button lives in. -->
+            <button type="button" id="convClose" class="conv-close" aria-label="Back to the chat">✕</button>
           </div>
           <ul id="convList" class="people-list conv-list"></ul>
           <div class="people-empty" id="convEmpty">No saved chats yet — ask something and it's saved here.</div>
         </div>
 
-        <p class="disclaimer">
+        <p class="disclaimer" data-pane="profile">
           Guidance framework, not fixed fate. For legal, financial, or medical
           decisions, consult a qualified professional.
         </p>
@@ -274,7 +283,8 @@
             <div class="welcome-glyph">✦</div>
             <h2>your stars, decoded</h2>
             <p>
-              drop your birth deets on the left and hit <b>cast my chart</b>.
+              drop your birth deets <span class="wide-only">on the left</span><span
+                class="narrow-only">under <b>Chart</b> below</span> and hit <b>cast my chart</b>.
               you'll get your cosmic ID, today's vibe, the era you're in and your
               green flags — in plain english, zero jargon. then just talk to it.
             </p>
@@ -290,11 +300,68 @@
         </div>
 
         <form class="composer" id="composer">
+          <!-- Saved chats, one tap from the conversation they belong to. Phones
+               only: the desktop sidebar already lists them beside the chat. -->
+          <button type="button" id="historyBtn" class="composer-history" aria-label="Saved chats" title="Saved chats">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.6 12a8.4 8.4 0 1 0 2.4-5.9" />
+              <path d="M3.2 4.6v3.9h3.9" />
+              <path d="M12 7.6V12l3 1.8" />
+            </svg>
+          </button>
           <textarea id="input" rows="1" placeholder="cast your chart, then ask me anything…" disabled></textarea>
           <button type="submit" id="sendBtn" disabled>Send</button>
         </form>
       </main>
     </div>
+
+    <!-- ===== Mobile bottom bar =====
+         Phones only (hidden by CSS above 820px). Four destinations: the chat,
+         your chart, your people, your account. It replaces the hamburger drawer
+         the sidebar used to hide behind — the sidebar is now whichever of the
+         last three panes is selected, laid over the chat. A sibling of .app
+         rather than a child, so it can never become a grid item. -->
+    <nav id="tabBar" class="tab-bar" aria-label="Sections" hidden>
+      <button type="button" class="tab is-active" data-tab="chat" aria-current="page">
+        <span class="tab-ic">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20.5 11.6a8 8 0 0 1-11.6 7.1L4 20.2l1.5-4.6a8 8 0 1 1 15-4z" />
+          </svg>
+        </span>
+        <span class="tab-label">Chat</span>
+      </button>
+      <button type="button" class="tab" data-tab="chart">
+        <span class="tab-ic">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.6c.7 4.7 2.9 6.9 7.6 7.6-4.7.7-6.9 2.9-7.6 7.6-.7-4.7-2.9-6.9-7.6-7.6 4.7-.7 6.9-2.9 7.6-7.6z" />
+            <path d="M17.8 16.4c.3 1.7 1.1 2.5 2.8 2.8-1.7.3-2.5 1.1-2.8 2.8-.3-1.7-1.1-2.5-2.8-2.8 1.7-.3 2.5-1.1 2.8-2.8z" />
+          </svg>
+        </span>
+        <span class="tab-label">Chart</span>
+      </button>
+      <button type="button" class="tab" data-tab="friends">
+        <span class="tab-ic">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="8" r="3.4" />
+            <path d="M2.8 19.6a6.4 6.4 0 0 1 12.4 0" />
+            <path d="M16.2 5.2a3.4 3.4 0 0 1 0 6.4" />
+            <path d="M17.6 14.2a6.4 6.4 0 0 1 3.6 5.4" />
+          </svg>
+          <span class="tab-badge" hidden></span>
+        </span>
+        <span class="tab-label">Friends</span>
+      </button>
+      <button type="button" class="tab" data-tab="profile">
+        <span class="tab-ic">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9.2" />
+            <circle cx="12" cy="10" r="3.1" />
+            <path d="M5.9 19.3a7 7 0 0 1 12.2 0" />
+          </svg>
+        </span>
+        <span class="tab-label">Profile</span>
+      </button>
+    </nav>
 
     <!-- ===== Auth overlay (login / register) ===== -->
     <div id="authOverlay" class="auth-overlay">

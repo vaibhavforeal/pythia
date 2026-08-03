@@ -21,6 +21,12 @@
   --radius: 10px;
   --radius-sm: 6px;
   --radius-xs: 4px;
+  /* Mobile chrome. Both bars are fixed, so every rule that has to clear them
+     (the shell's padding, the sidebar pane, the toast) measures from these
+     rather than repeating a magic number. Safe-area insets are added at the
+     point of use — only the bottom bar actually sits in the inset. */
+  --bar-h: 52px;   /* top branding bar */
+  --tab-h: 56px;   /* bottom tab bar, excluding the home-indicator inset */
   --font: "Raleway", "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
   --font-head: "Lora", Georgia, "Times New Roman", serif;   /* serif for display/headings */
   --shadow-sm: 0 1px 2px rgba(20, 50, 80, 0.05);   /* whisper lift, cards only */
@@ -111,7 +117,6 @@ body.app-shell { overflow: hidden; }
 .brand-text { flex: 1; min-width: 0; }
 .brand h1 { margin: 0; font-family: var(--font-head); font-size: 19px; font-weight: 600; letter-spacing: 0.2px; color: var(--ink); }
 .tag { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
-.panel-close { display: none; }
 
 .birth-form h2, .chart-card h3, .match-card h3 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
@@ -1012,6 +1017,25 @@ button {
 }
 #input:focus { outline: none; border-color: var(--sky); box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14); }
 #input:disabled { opacity: 0.6; background: var(--panel2); }
+/* Saved chats, from the chat itself. Phones only — the desktop sidebar already
+   has the list on screen, so a second entry point there would be noise. */
+.composer-history {
+  display: none;
+  flex: 0 0 auto; place-items: center;
+  width: 42px; height: 42px;
+  color: var(--muted); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.composer-history svg {
+  width: 20px; height: 20px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.composer-history:active,
+.app[data-tab="chats"] .composer-history {
+  color: var(--sky-deep); border-color: var(--sky); background: var(--sky-soft);
+}
 #sendBtn {
   padding: 10px 18px; font-size: 13px; color: var(--on-accent);
   background: var(--sky); transition: background .15s;
@@ -1068,8 +1092,10 @@ button {
 
 /* Transient confirmation — streaks need a moment, and there's nowhere else
    in the layout for one to land. */
+/* Above the mobile tab bar (z 220) — a confirmation behind the navigation is
+   a confirmation nobody sees. */
 .toast {
-  position: fixed; left: 50%; bottom: 28px; z-index: 90;
+  position: fixed; left: 50%; bottom: 28px; z-index: 240;
   transform: translate(-50%, 14px); opacity: 0;
   padding: 11px 20px; border-radius: 999px;
   font: 600 13.5px var(--font); color: #fff;
@@ -1117,6 +1143,9 @@ button {
 }
 .p-del:hover { color: var(--err); border-color: var(--err); background: rgba(229, 72, 77, 0.06); }
 .people-empty { font-size: 11.5px; color: var(--faint); padding: 4px 0; }
+/* Closes the mobile history view. Absent on desktop, where the list is simply
+   part of the sidebar and there's nothing to close. */
+.conv-close { display: none; }
 
 /* ---------- Auth overlay ---------- */
 .auth-overlay {
@@ -1178,50 +1207,134 @@ button {
   padding: 0; text-decoration: underline; cursor: pointer;
 }
 
-/* ---------- Responsive: stack + compact on small screens ---------- */
-/* Mobile drawer controls + branding bar — hidden on desktop */
-.panel-toggle, .panel-scrim, .mobile-bar { display: none; }
+/* ---------- Mobile bottom bar ----------
+   Four destinations on phones: the chat, your chart, your people, your account.
+   It replaces the hamburger drawer the sidebar used to live behind — a drawer
+   hides everything but the chat behind a gesture, and on a launch surface the
+   three things people came for shouldn't need discovering. Hidden above 820px,
+   where the sidebar is simply on screen. */
+.mobile-bar, .tab-bar { display: none; }
+/* Copy that differs between the two layouts (e.g. "on the left" vs "under Chart
+   below"), so the welcome text can name what the reader can actually see. */
+.narrow-only { display: none; }
 
+.tab-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 220;
+  align-items: stretch;
+  /* The inset is padding, not height, so the buttons stay above the iOS home
+     indicator instead of being centred behind it. */
+  height: calc(var(--tab-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -2px 14px rgba(20, 50, 80, 0.07);
+  transition: transform .2s ease;
+}
+.tab {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 5px 2px 3px; border-radius: 0; background: none;
+  color: var(--faint); transition: color .18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-ic {
+  position: relative; display: grid; place-items: center;
+  width: 48px; height: 26px; border-radius: 999px;
+  transition: background .2s ease, transform .15s ease;
+}
+.tab svg {
+  width: 21px; height: 21px;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.tab-label { font-size: 10.5px; font-weight: 600; letter-spacing: .2px; line-height: 1; }
+.tab.is-active { color: var(--sky-deep); }
+.tab.is-active .tab-ic { background: var(--sky-soft); }
+.tab.is-active svg { stroke-width: 1.9; }
+.tab:active .tab-ic { transform: scale(.92); }
+/* Pending connection requests — the one thing that happens while you're elsewhere. */
+.tab-badge {
+  position: absolute; top: -3px; right: 4px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  display: grid; place-items: center; border-radius: 999px;
+  font-size: 9.5px; font-weight: 700; line-height: 1;
+  color: #fff; background: var(--err); border: 2px solid var(--panel);
+}
+/* The on-screen keyboard and a fixed bottom bar want the same 56px. Focusing
+   the composer hands it to the keyboard: the bar drops away and the shell
+   reclaims its padding, so the input stays put instead of being covered. */
+body.kb-open .tab-bar { transform: translateY(110%); }
+
+/* Each pane fades up as it takes the stage. Panes are display-toggled, so the
+   animation restarts on every switch without any JS. */
+@keyframes pane-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- Responsive: stack + compact on small screens ---------- */
 @media (max-width: 820px) {
   /* fixed backgrounds jank on mobile Safari — let it scroll with content;
      overflow-x is a defensive guard against sub-pixel horizontal scroll. */
   html, body { background-attachment: scroll; overflow-x: hidden; }
 
-  /* Chat takes the full width; the sidebar becomes a slide-in drawer. */
-  .app { grid-template-columns: 1fr; }
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+
+  /* Chat takes the full width; the bottom bar's height comes out of the shell
+     so the composer is never underneath it. */
+  .app {
+    grid-template-columns: 1fr;
+    padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
+    transition: padding-bottom .2s ease;
+  }
+  body.kb-open .app { padding-bottom: 0; }
   /* The .chat height override that used to live here is gone: it was the only
      place dvh was applied, which is why the bug was mobile-only and why .app and
      .chat disagreed. Both are handled once, at their own rules. */
 
+  /* The sidebar is no longer a drawer — it's whichever of the three non-chat
+     tabs is selected, laid over the chat between the two bars. Overlaid rather
+     than swapped in: .chat keeps its layout underneath, so scroll position and
+     a stream in flight both survive a trip to another tab. */
   .panel {
-    position: fixed; top: 0; bottom: 0; left: 0;
-    width: min(86vw, 340px); z-index: 200;
-    border-right: 1px solid var(--line); border-bottom: none;
-    transform: translateX(-100%);
-    transition: transform .25s ease;
-    box-shadow: 4px 0 28px rgba(20, 50, 80, 0.22);
+    position: fixed; z-index: 150;
+    top: var(--bar-h); left: 0; right: 0;
+    bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
+    display: none;
+    border-right: none;
   }
-  .app.panel-open .panel { transform: translateX(0); }
-  .brand {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px;
-  }
-  .panel-close {
-    display: grid; place-items: center;
-    width: 32px; height: 32px; font-size: 16px; color: var(--muted);
-    background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-sm);
-    cursor: pointer; flex: 0 0 auto;
-  }
-  .panel-close:hover { color: var(--ink); border-color: var(--sky); background: var(--sky-soft); }
-  .panel-scroll { padding: 14px 14px 18px; }
+  body.kb-open .panel { bottom: 0; }
+  .app:not([data-tab="chat"]) .panel { display: flex; }
+  /* The fixed branding bar already carries the logo and title. */
+  .brand { display: none; }
+  .panel-scroll { padding: 14px 14px 22px; }
 
-  /* Fixed branding bar across the top — always visible once signed in, so
-     closing the drawer reveals the chat under a pinned Pythia header. It sits
-     below the scrim (z 190) so a tap anywhere on it also closes an open drawer. */
+  /* Only the selected pane's cards are on screen; every direct child of
+     .panel-scroll declares which pane(s) it belongs to. `chats` has no tab of
+     its own — the composer's history button opens it over the conversation. */
+  .app[data-tab="chart"]   .panel-scroll > :not([data-pane~="chart"]),
+  .app[data-tab="friends"] .panel-scroll > :not([data-pane~="friends"]),
+  .app[data-tab="profile"] .panel-scroll > :not([data-pane~="profile"]),
+  .app[data-tab="chats"]   .panel-scroll > :not([data-pane~="chats"]) { display: none; }
+  .app:not([data-tab="chat"]) .panel-scroll > [data-pane] { animation: pane-in .2s ease both; }
+
+  .tab-bar { display: flex; }
+  .composer-history { display: grid; }
+  .app[data-tab="chats"] .conv-close {
+    display: grid; place-items: center;
+    width: 28px; height: 24px; font-size: 12px; color: var(--muted);
+    background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  }
+  /* Keep the two controls together on the right rather than letting
+     space-between strand "＋ New" in the middle of the row. */
+  .app[data-tab="chats"] #newChatBtn { margin-left: auto; }
+
+  /* Fixed branding bar across the top — always visible once signed in. */
   .mobile-bar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 180;
     display: flex; align-items: center; gap: 9px;
-    height: 52px; padding: 0 14px 0 62px;  /* left padding clears the floating hamburger */
+    height: var(--bar-h); padding: 0 14px;
     background: var(--panel); border-bottom: 1px solid var(--line);
     box-shadow: 0 1px 10px rgba(20, 50, 80, 0.06);
   }
@@ -1231,27 +1344,8 @@ button {
     font-weight: 600; letter-spacing: 0.2px; color: var(--ink);
   }
 
-  /* Hamburger toggle + backdrop */
-  .panel-toggle {
-    position: fixed; top: 5px; left: 10px; z-index: 210;
-    width: 42px; height: 42px; display: grid; place-items: center;
-    font-size: 18px; color: var(--on-accent); background: var(--sky);
-    border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);
-  }
-  /* Once the drawer is open it stays out of the way — close it by tapping the
-     chat or the branding bar. This also keeps it off the scrolling sidebar. */
-  .app.panel-open .panel-toggle { display: none; }
-  /* Backdrop over the chat with glassmorphic blur and fade transition */
-  .panel-scrim {
-    position: fixed; inset: 0; z-index: 190; display: block;
-    background: rgba(18, 48, 73, 0.35);
-    opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity .25s ease, visibility .25s ease;
-  }
-  .app.panel-open .panel-scrim {
-    opacity: 1; visibility: visible; pointer-events: auto;
-    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-  }
+  /* Toasts clear the tab bar rather than hiding behind it. */
+  .toast { bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 16px); }
 
   /* Chat gutters; keep content clear of the fixed top bar */
   .chat-scroll { padding: 64px 0 18px; }
@@ -1261,7 +1355,7 @@ button {
   .daily-weather:not([hidden]) + .chat-scroll { padding-top: 14px; }
   /* The banner sits under the fixed branding bar and then owns the top gutter,
      so the scroll area drops its own clearance (same trick as daily-weather). */
-  .id-banner { margin-top: 52px; padding: 9px 14px; }
+  .id-banner { margin-top: var(--bar-h); padding: 9px 14px; }
   .id-banner:not([hidden]) + .chat-scroll { padding-top: 14px; }
   .idb-triple { font-size: 13.5px; gap: 2px 11px; }
   .idb-glyph { font-size: 20px; }
@@ -1275,6 +1369,13 @@ button {
   .p-del { width: 40px; }
 }
 
+/* Wide phones and small tablets still get the bottom bar, but the pane is now
+   full-width — so keep the cards at a readable measure instead of stretching a
+   birth form across 800px. */
+@media (min-width: 600px) and (max-width: 820px) {
+  .panel-scroll { padding-left: calc((100% - 560px) / 2); padding-right: calc((100% - 560px) / 2); }
+}
+
 @media (max-width: 480px) {
   /* Compact type + spacing for phones */
   .brand { margin-bottom: 12px; }
@@ -1285,9 +1386,18 @@ button {
   .welcome h2 { font-size: 20px; }
   .welcome-glyph { font-size: 34px; }
   .auth-box { padding: 22px 18px; }
-  /* Cards live in the sidebar drawer on phones — .profile already sizes them. */
+  /* Cards live in the sidebar pane on phones — .profile already sizes them. */
   .id-banner { padding: 8px 12px; gap: 9px; }
   .idb-share { padding: 6px 11px; font-size: 11.5px; }
+  /* Four labels have to fit the narrowest phone without wrapping. */
+  .tab-label { font-size: 10px; }
+  .tab-ic { width: 44px; }
+}
+
+/* Last, so it outranks the same-specificity motion rules above it. */
+@media (prefers-reduced-motion: reduce) {
+  .panel-scroll > [data-pane] { animation: none; }
+  .tab-bar, .tab-ic, .app { transition: none; }
 }
 
 /* ================= Public site: landing + legal pages ================= */
