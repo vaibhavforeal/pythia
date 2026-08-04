@@ -202,3 +202,14 @@ test("chartToText ranks the vargas instead of dumping them flat", () => {
   // The primary section must precede the supplementary table.
   assert.ok(txt.indexOf("PRIMARY VARGAS") < txt.indexOf("supplementary"));
 });
+
+test("a chart stripped of synthesis rebuilds identically", () => {
+  const { computeChart } = require("./astro");
+  const full = computeChart({
+    year: 1996, month: 3, day: 14, hour: 9, minute: 25,
+    lat: 12.9716, lon: 77.5946, tz: 5.5
+  });
+  const stored = JSON.parse(JSON.stringify(full));
+  delete stored.synthesis;
+  assert.deepStrictEqual(s.computeSynthesis(stored), full.synthesis);
+});

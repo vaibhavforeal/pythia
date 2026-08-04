@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const express = require("express");
 
 const { computeChart, chartToText } = require("./astro");
+const { computeSynthesis } = require("./synthesis");
 const {
   computeGunaMilan, moonInputFromChart, computeManglik, manglikVerdict, matchToText
 } = require("./gunamilan");
@@ -1379,6 +1380,10 @@ app.get("/api/conversations/:id", async (req, res) => {
   try {
     const c = await conversations.get(req.userId, req.params.id);
     if (!c) return res.status(404).json({ error: "Chat not found." });
+    // Chats saved before the synthesis read existed hold a chart without it.
+    // It is a pure function of what is already stored, so rebuild on read
+    // rather than migrating the table.
+    if (c.chart && !c.chart.synthesis) c.chart.synthesis = computeSynthesis(c.chart);
     res.json({ conversation: c });
   } catch (err) {
     console.error("get conversation error:", err);
