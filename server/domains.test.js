@@ -79,6 +79,83 @@ test("the html line escapes its fragments and emphasises only the verdict", () =
   assert.match(domainLineHtml(hostile2), /&lt;script/);
 });
 
+test("the divergence arm escapes its fragment too, not just the promise", () => {
+  // The divergence branch builds its half of the HTML by hand so it can wrap the
+  // verdict in <b>, which means it does its own esc() call — and nothing pinned
+  // it. Deleting that esc() used to leave the whole suite green while hostile
+  // content rendered live. This is the assertion that goes red.
+  const read = domainRead(CHART, "career");
+  assert.equal(read.slot2, "divergence", "fixture: career must diverge");
+  const hostile = { ...read, lordKey: '<img src=x onerror=alert(1)>' };
+  const html = domainLineHtml(hostile);
+  assert.match(html, /<b>/, "the divergence arm actually fired");
+  assert.ok(!/<img/.test(html), `hostile lordKey rendered live: ${html}`);
+  // The lord is named twice — once in the promise, once in the divergence — and
+  // both occurrences must come back escaped.
+  const escaped = html.match(/&lt;img src=x onerror=alert\(1\)&gt;/g) || [];
+  assert.equal(escaped.length, 2, `expected both mentions escaped, got ${escaped.length}: ${html}`);
+});
+
+test("D9 is the partnership chart where it governs, and only a strength grade where it is borrowed", () => {
+  // situationships owns the navamsa (vargaRole "domain"); friendships only
+  // borrows it as a general strength grade because there is no D11. Calling it
+  // "the strength chart" on the situationships card understates the single most
+  // load-bearing varga in the whole set.
+  const sit = domainRead(CHART, "situationships");
+  const fr = domainRead(CHART, "friendships");
+  assert.equal(sit.slot2, "divergence", "fixture: situationships must print the varga");
+  assert.equal(fr.slot2, "divergence", "fixture: friendships must print the varga");
+  assert.equal(sit.sustain.varga, "D9");
+  assert.equal(fr.sustain.varga, "D9");
+
+  const sitLine = domainLine(sit), frLine = domainLine(fr);
+  assert.match(sitLine, /D9, the partnership chart/, `situationships: ${sitLine}`);
+  assert.match(frLine, /D9, the strength chart/, `friendships: ${frLine}`);
+  assert.ok(!/strength chart/.test(sitLine), `situationships must not read D9 as a grade: ${sitLine}`);
+  assert.ok(!/partnership chart/.test(frLine), `friendships must not read D9 as its topic: ${frLine}`);
+});
+
+test("a house-loud line never repeats the lord the promise already named", () => {
+  // The lord is itself in `occupants` whenever it sits in the house it rules, so
+  // the naive rendering spent slot 2 restating slot 1: "...ruled by Saturn,
+  // sitting in your 10th... Sun, Mercury and Saturn sit right in the 10th."
+  const c = JSON.parse(JSON.stringify(CHART));
+  c.ascendant.signIndex = 2;  // Cancer asc → 10th is Pisces → Jupiter rules it
+  const putAt = (key, signIndex) => {
+    const p = c.planets.find(x => x.key === key);
+    p.signIndex = signIndex;
+    p.house = ((signIndex - 2 + 12) % 12) + 1;
+  };
+  putAt("Jupiter", 11);   // the career lord, in the house it rules
+  putAt("Sun", 11);
+  putAt("Mercury", 11);
+  putAt("Moon", 0); putAt("Mars", 1); putAt("Venus", 3);
+  putAt("Saturn", 4); putAt("Rahu", 5); putAt("Ketu", 6);
+  c.synthesis = computeSynthesis(c);
+
+  const read = domainRead(c, "career");
+  assert.equal(read.slot2, "loud");
+  assert.equal(read.loudWhere, "house");
+  assert.ok(read.loudSet.includes(read.lordKey), "fixture: the lord is one of the occupants");
+
+  const line = domainLine(read);
+  const mentions = line.split(read.lordKey).length - 1;
+  assert.equal(mentions, 1, `${read.lordKey} is named ${mentions} times: ${line}`);
+  // Slot 2 still has something to say — the other occupants.
+  assert.match(line, /Sun and Mercury sit right in the 10th/, line);
+});
+
+test("a house holding only Ketu is not reported to the model as empty", () => {
+  const c = JSON.parse(JSON.stringify(CHART));   // Aries asc; 4th house is Cancer
+  const ketu = c.planets.find(p => p.key === "Ketu");
+  ketu.signIndex = 3; ketu.house = 4;
+  c.synthesis = computeSynthesis(c);
+
+  const ctx = domainContext(domainRead(c, "home"));
+  assert.match(ctx, /In the house: Ketu/, `Ketu must be listed: ${ctx}`);
+  assert.ok(!/No planets in the house/.test(ctx), `the prompt asserts a false fact: ${ctx}`);
+});
+
 test("the verdict phrase is emphasised with <b> tags on divergence", () => {
   const read = domainRead(CHART, "career");
   // Career in this chart has divergence (grows-into-it)

@@ -887,7 +887,7 @@ function renderCosmicId(c) {
           const ll = c.synthesis && c.synthesis.lagnaLord;
           return ll
             ? `<li><span class="cid-glyph">⚚</span><span class="cid-label">Ruler</span>
-        <span class="cid-val">${ll.key}<small>${ll.dignity}, ${ll.band}</small></span></li>`
+        <span class="cid-val">${escAttr(ll.key)}<small>${escAttr(ll.dignity)}, ${escAttr(ll.band)}</small></span></li>`
             : "";
         })()}
       </ul>

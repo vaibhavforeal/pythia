@@ -214,6 +214,37 @@ test("a chart stripped of synthesis rebuilds identically", () => {
   assert.deepStrictEqual(s.computeSynthesis(stored), full.synthesis);
 });
 
+test("Ketu counts as an occupant, exactly like Rahu and every other graha", () => {
+  // The pre-branch code filtered Ketu out of `occupants`, so a house holding
+  // only Ketu reported as empty and the model was told "No planets in the
+  // house" — for Ketu in the 4th, which is a first-order fact. Nothing else in
+  // the module agreed: lordCompany counts Ketu as a malefic and secondOccupants
+  // never filtered it.
+  const c = chart({
+    ascSign: 0,                             // Aries asc → 4th house is Cancer
+    planets: { Ketu: { signIndex: 3 }, Rahu: { signIndex: 9 } }
+  });
+  const home = s.domainSynthesis(c, "home");
+  assert.deepStrictEqual(home.occupants, ["Ketu"], "Ketu occupies the 4th");
+
+  // And the node is not special-cased in the opposite direction either: Rahu in
+  // the 10th reads the same way.
+  const career = s.domainSynthesis(c, "career");
+  assert.deepStrictEqual(career.occupants, ["Rahu"], "Rahu occupies the 10th");
+});
+
+test("a Ketu-only house is loud once a second graha joins it", () => {
+  // The threshold reads occupants.length, so including Ketu legitimately moves
+  // some houses over the >= 2 line. That is the correct count, not a regression.
+  const c = chart({
+    ascSign: 0,
+    planets: { Ketu: { signIndex: 3 }, Mars: { signIndex: 3 } }
+  });
+  const home = s.domainSynthesis(c, "home");
+  assert.deepStrictEqual(home.occupants.sort(), ["Ketu", "Mars"]);
+  assert.equal(home.loudWhere, "house");
+});
+
 test("loudWhere = 'house' when 2+ occupants in the domain house", () => {
   // Fixture: Cancer asc (signIndex 2), career (10th = Pisces at signIndex 11, lord Jupiter).
   // Jupiter in 10th, Sun + Mercury also in 10th → 3 occupants → slot2 = "loud" → loudWhere = "house".

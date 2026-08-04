@@ -68,11 +68,25 @@ const HOUSE_MEANING = {
   9: "belief and mentors", 10: "work and status", 11: "your circle and gains", 12: "retreat and letting go"
 };
 
-// What each varga is FOR, in the card's own voice.
+// What each varga is FOR, in the card's own voice — when it actually governs
+// the topic. The navamsa IS the partnership chart, so situationships must not
+// hear it described as a generic strength grade.
 const VARGA_VOICE = {
-  D9: "the strength chart", D4: "the home chart",
+  D9: "the partnership chart", D4: "the home chart",
   D10: "the career chart", D24: "the learning chart"
 };
+
+/**
+ * The other reading of a varga: role "strength" means it is only borrowed as a
+ * general strength grade, not as the chart that owns the topic. Only
+ * friendships does this — see vargaRole in server/synthesis.js — and calling D9
+ * "the partnership chart" on a card about your circle would be wrong.
+ */
+function vargaVoice(sustain) {
+  if (!sustain) return "the divisional chart";
+  if (sustain.role === "strength") return "the strength chart";
+  return VARGA_VOICE[sustain.varga] || "the divisional chart";
+}
 
 const VERDICT_PHRASE = {
   "looks-better-than-it-holds": "this looks better than it holds",
@@ -124,12 +138,17 @@ function secondSentence(read) {
   switch (read.slot2) {
     case "divergence": {
       const dir = read.verdict === "looks-better-than-it-holds" ? "falls" : "picks up";
-      return `In the ${su.varga}, ${VARGA_VOICE[su.varga] || "the divisional chart"}, ` +
+      return `In the ${su.varga}, ${vargaVoice(su)}, ` +
         `that same ${read.lordKey} ${dir} — ${VERDICT_PHRASE[read.verdict]}.`;
     }
     case "loud": {
       if (read.loudWhere === "house") {
-        return `${andList(read.loudSet)} ${read.loudSet.length > 1 ? "sit" : "sits"} right in the ${ord(read.house)}, ` +
+        // A lord sitting in the house it rules is itself an occupant, and slot 1
+        // has already named it. Printing it again spends the whole second slot
+        // restating the first. Safe by construction: this arm only fires on 2+
+        // occupants, so dropping one always leaves at least one name.
+        const others = read.loudSet.filter(k => k !== read.lordKey);
+        return `${andList(others)} ${others.length > 1 ? "sit" : "sits"} right in the ${ord(read.house)}, ` +
           `which makes this area loud for you.`;
       } else {
         return `${andList(read.loudSet)} ${read.loudSet.length > 1 ? "sit" : "sits"} alongside ${read.lordKey}, ` +

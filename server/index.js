@@ -1383,7 +1383,15 @@ app.get("/api/conversations/:id", async (req, res) => {
     // Chats saved before the synthesis read existed hold a chart without it.
     // It is a pure function of what is already stored, so rebuild on read
     // rather than migrating the table.
-    if (c.chart && !c.chart.synthesis) c.chart.synthesis = computeSynthesis(c.chart);
+    // Guarded on purpose: computeSynthesis throws on a malformed stored chart
+    // (dignityOf rejects a signIndex that is not an integer 0..11). A failed
+    // backfill must never fail the request — losing it costs the reader the
+    // synthesis block, while a 500 costs them the whole chat, permanently. The
+    // client already degrades gracefully when `synthesis` is absent.
+    if (c.chart && !c.chart.synthesis) {
+      try { c.chart.synthesis = computeSynthesis(c.chart); }
+      catch (e) { console.error("synthesis backfill failed:", e.message); }
+    }
     res.json({ conversation: c });
   } catch (err) {
     console.error("get conversation error:", err);

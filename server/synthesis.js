@@ -174,7 +174,12 @@ function domainSynthesis(chart, key) {
 
   const verdict = sustain ? verdictFor(promise.band, sustain.band) : null;
 
-  const occupants = chart.planets.filter(p => p.house === spec.house && p.key !== "Ketu").map(p => p.key);
+  // Every graha counts as an occupant, nodes included. Ketu was excluded here
+  // before this branch, which made the model's PROMISE block assert "No planets
+  // in the house" for a house holding Ketu — Ketu in the 4th or the 7th is a
+  // first-order fact, not a rounding error. Nothing else treated it that way:
+  // secondOccupants never filtered it and lordCompany counts it as a malefic.
+  const occupants = chart.planets.filter(p => p.house === spec.house).map(p => p.key);
   const secondOccupants = chart.planets.filter(p => p.house === spec.second).map(p => p.key);
 
   // Malefics and benefics sitting with the lord — the "loud" signal.
