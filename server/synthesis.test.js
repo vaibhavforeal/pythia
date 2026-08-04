@@ -1,0 +1,163 @@
+// The synthesis hierarchy: D1 promises, the varga sustains, the dasha only
+// shades. The tests that matter here are the ones guarding rules that are easy
+// to get backwards — the weak-D1/strong-varga asymmetry, and the suppression
+// order that keeps the era clause off a card that has something better to say.
+const test = require("node:test");
+const assert = require("node:assert");
+const s = require("./synthesis");
+
+// A chart is built by hand rather than through computeChart, because
+// computeChart reads Date.now() for transits and the running dasha and would
+// make these tests drift with the calendar.
+function chart({ ascSign = 1, planets = {}, d9 = {}, vargas = {}, maha = "Ketu", antar = "Venus" } = {}) {
+  const KEYS = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"];
+  const base = k => ({ key: k, signIndex: 0, lon: 0, retro: false, ...(planets[k] || {}) });
+  const withHouse = p => ({ ...p, house: ((p.signIndex - ascSign + 12) % 12) + 1 });
+  const list = KEYS.map(k => withHouse(base(k)));
+
+  const navPlanets = KEYS.map(k => {
+    const o = d9[k] || { signIndex: 0 };
+    return { key: k, signIndex: o.signIndex, house: o.house ?? 1, vargottama: !!o.vargottama };
+  });
+
+  const divisionals = ["D4", "D10", "D24"].map(key => ({
+    key, name: key, governs: "",
+    ascendant: { signIndex: 0, sign: "Aries", signLord: "Mars" },
+    planets: KEYS.map(k => {
+      const o = (vargas[key] || {})[k] || { signIndex: 0 };
+      return { key: k, signIndex: o.signIndex, house: o.house ?? 1, sameAsRashi: !!o.sameAsRashi };
+    })
+  }));
+
+  return {
+    ascendant: { signIndex: ascSign, sign: "x", signLord: s.SIGN_LORD_AT(ascSign) },
+    planets: list,
+    navamsa: { ascendant: { signIndex: 0 }, planets: navPlanets },
+    divisionals,
+    dasha: { maha: { lord: maha }, antar: { lord: antar } }
+  };
+}
+
+test("the verdict matrix resolves every band pair", () => {
+  const v = s.verdictFor;
+  assert.equal(v("strong", "strong"), "holds");
+  assert.equal(v("strong", "mixed"), "holds");
+  assert.equal(v("mixed", "strong"), "holds");
+  assert.equal(v("mixed", "mixed"), "holds");
+  assert.equal(v("strong", "weak"), "looks-better-than-it-holds");
+  assert.equal(v("mixed", "weak"), "looks-better-than-it-holds");
+  assert.equal(v("weak", "strong"), "grows-into-it");
+  assert.equal(v("weak", "mixed"), "grows-into-it");
+  assert.equal(v("weak", "weak"), "needs-building");
+});
+
+test("a strong varga on a weak D1 never reads as holding", () => {
+  // The classical rule: the varga cannot manufacture a promise the rashi does
+  // not make. It can only show the thing maturing.
+  assert.equal(s.verdictFor("weak", "strong"), "grows-into-it");
+  assert.notEqual(s.verdictFor("weak", "strong"), "holds");
+});
+
+test("career reads D10 and situationships read the navamsa", () => {
+  assert.equal(s.DOMAIN_SPEC.career.varga, "D10");
+  assert.equal(s.DOMAIN_SPEC.career.house, 10);
+  assert.equal(s.DOMAIN_SPEC.situationships.varga, "D9");
+  assert.equal(s.DOMAIN_SPEC.situationships.house, 7);
+});
+
+test("friendships uses the navamsa as a general strength grade, not as its topic", () => {
+  assert.equal(s.DOMAIN_SPEC.friendships.varga, "D9");
+  assert.equal(s.DOMAIN_SPEC.friendships.vargaRole, "strength");
+  assert.equal(s.DOMAIN_SPEC.situationships.vargaRole, "domain");
+});
+
+test("the worked example from the spec: strong in D1, fallen in D10", () => {
+  // Taurus ascendant → 10th is Aquarius → Saturn rules it.
+  // Saturn sits in Aquarius (own sign, 10th house, a kendra) = strong.
+  // In D10 that Saturn falls in Aries (debilitated) in the 12th = weak.
+  const c = chart({
+    ascSign: 1,
+    planets: { Saturn: { signIndex: 10 } },
+    vargas: { D10: { Saturn: { signIndex: 0, house: 12 } } },
+    maha: "Saturn"
+  });
+  const r = s.domainSynthesis(c, "career");
+  assert.equal(r.lordKey, "Saturn");
+  assert.equal(r.promise.band, "strong");
+  assert.equal(r.sustain.band, "weak");
+  assert.equal(r.verdict, "looks-better-than-it-holds");
+});
+
+test("divergence outranks a loud house and the dasha", () => {
+  // Same chart: Saturn occupies the house it rules AND the era lord rules it.
+  // All three factors are live; only the divergence may be printed.
+  const c = chart({
+    ascSign: 1,
+    planets: { Saturn: { signIndex: 10 }, Jupiter: { signIndex: 10 } },
+    vargas: { D10: { Saturn: { signIndex: 0, house: 12 } } },
+    maha: "Saturn"
+  });
+  const r = s.domainSynthesis(c, "career");
+  assert.equal(r.occupants.length >= 2, true, "the house is loud");
+  assert.equal(r.eraTouches, "rules it", "the era touches it");
+  assert.equal(r.slot2, "divergence", "and divergence still wins");
+});
+
+test("the dasha is the last thing printed, never the first", () => {
+  // Nothing structural to say: lord is mixed in both charts, house is empty,
+  // but the era lord rules the house. Only then does shade win the slot.
+  const c = chart({
+    ascSign: 0,                                   // Aries asc → 11th is Aquarius → Saturn
+    planets: { Saturn: { signIndex: 2 } },        // Gemini: neutral, 3rd house
+    d9: { Saturn: { signIndex: 2, house: 3 } },   // neutral again
+    maha: "Saturn"
+  });
+  const r = s.domainSynthesis(c, "friendships");
+  assert.equal(r.verdict, "holds");
+  assert.equal(r.occupants.length, 0);
+  assert.equal(r.slot2, "shade");
+});
+
+test("combustion counts in the rashi and never in a varga", () => {
+  // Mercury rules the 5th from Taurus (Virgo). Put it beside the Sun.
+  const c = chart({
+    ascSign: 1,
+    planets: { Sun: { signIndex: 5, lon: 155 }, Mercury: { signIndex: 5, lon: 158 } },
+    vargas: { D24: { Mercury: { signIndex: 5, house: 1 } } }
+  });
+  const r = s.domainSynthesis(c, "focus");
+  assert.equal(r.promise.combust, true);
+  assert.ok(r.promise.reasons.some(x => /combust/i.test(x)));
+  assert.ok(!r.sustain.reasons.some(x => /combust/i.test(x)), "the varga grade is never burnt");
+});
+
+test("vargottama counts in the varga and never in the rashi", () => {
+  // Mercury rules the 5th from Taurus. Same sign in D24 as in D1 → vargottama.
+  const c = chart({
+    ascSign: 1,
+    planets: { Mercury: { signIndex: 5 } },
+    vargas: { D24: { Mercury: { signIndex: 5, house: 1, sameAsRashi: true } } }
+  });
+  const r = s.domainSynthesis(c, "focus");
+  assert.equal(r.sustain.vargottama, true);
+  assert.ok(r.sustain.reasons.some(x => /vargottama/i.test(x)));
+  assert.ok(!r.promise.reasons.some(x => /vargottama/i.test(x)), "the rashi grade never claims it");
+});
+
+test("the lagna lord condition is computed once, from D1", () => {
+  const c = chart({ ascSign: 1, planets: { Venus: { signIndex: 1 } } }); // Taurus asc, Venus in Taurus
+  const l = s.lagnaLordCondition(c);
+  assert.equal(l.key, "Venus");
+  assert.equal(l.house, 1);
+  assert.equal(l.dignity, "own");
+  assert.equal(l.band, "strong");
+});
+
+test("computeSynthesis covers every domain", () => {
+  const out = s.computeSynthesis(chart());
+  assert.deepStrictEqual(
+    Object.keys(out.domains).sort(),
+    ["career", "focus", "friendships", "home", "situationships"]
+  );
+  assert.ok(out.lagnaLord.band);
+});
