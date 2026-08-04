@@ -11,12 +11,14 @@
 // degree ranges. Those vary by source and the extra precision would not change
 // any band this module produces.
 
-// Lord of each sign, Aries → Pisces. Matches astro.js SIGNS.
+// Lord of each sign, Aries → Pisces. Source: Brihat Parashara Hora Shastra, ch. 2.
+// Also matches astro.js SIGNS.
 const SIGN_LORD = [
   "Mars", "Venus", "Mercury", "Moon", "Sun", "Mercury",
   "Venus", "Mars", "Jupiter", "Saturn", "Saturn", "Jupiter"
 ];
 
+// Exaltation, debilitation, and own signs. Source: Brihat Parashara Hora Shastra, ch. 3.
 const EXALT_SIGN = { Sun: 0, Moon: 1, Mars: 9, Mercury: 5, Jupiter: 3, Venus: 11, Saturn: 6 };
 const DEBIL_SIGN = { Sun: 6, Moon: 7, Mars: 3, Mercury: 11, Jupiter: 9, Venus: 5, Saturn: 0 };
 const OWN_SIGNS = {
@@ -70,6 +72,9 @@ const SIGN_NAMES = [
 
 /** Where a planet stands in the sign it occupies. */
 function dignityOf(planetKey, signIndex) {
+  if (!Number.isInteger(signIndex) || signIndex < 0 || signIndex > 11) {
+    throw new TypeError(`signIndex must be an integer 0..11, got ${signIndex}`);
+  }
   if (EXALT_SIGN[planetKey] === signIndex) return "exalted";
   if (DEBIL_SIGN[planetKey] === signIndex) return "debilitated";
   if ((OWN_SIGNS[planetKey] || []).includes(signIndex)) return "own";

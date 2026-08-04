@@ -76,3 +76,28 @@ test("reasons explain the score", () => {
   assert.ok(g.reasons.some(r => /12th/.test(r)));
   assert.ok(g.reasons.some(r => /combust/i.test(r)));
 });
+
+test("dignityOf rejects invalid signIndex", () => {
+  assert.throws(
+    () => d.dignityOf("Rahu", undefined),
+    /signIndex must be an integer 0\.\.11/
+  );
+  assert.throws(
+    () => d.dignityOf("Mars", -1),
+    /signIndex must be an integer 0\.\.11/
+  );
+  assert.throws(
+    () => d.dignityOf("Sun", 12),
+    /signIndex must be an integer 0\.\.11/
+  );
+  assert.throws(
+    () => d.dignityOf("Jupiter", 5.5),
+    /signIndex must be an integer 0\.\.11/
+  );
+});
+
+test("dignityOf handles unknown planets with valid signIndex", () => {
+  // Rahu owns no sign, so it falls through to friendship and lands on neutral
+  assert.equal(d.dignityOf("Rahu", 4), "neutral");
+  assert.equal(d.dignityOf("Ketu", 7), "neutral");
+});
