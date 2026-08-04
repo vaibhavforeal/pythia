@@ -880,6 +880,16 @@ function renderCosmicId(c) {
           <span class="cid-val">${star || "—"}${pada ? `<small>pada ${pada}</small>` : ""}</span></li>
         <li><span class="cid-glyph">↑</span><span class="cid-label">Rising</span>
           <span class="cid-val">${asc.sign || "—"}${zg(asc.signIndex)}${sa(asc.signSanskrit)}</span></li>
+        ${(() => {
+          // The lagna lord's condition is a chart-wide baseline — how much of anything
+          // else the person can act on. It belongs here, once, and deliberately NOT on
+          // each situation card, which is what made the cards read as a pile.
+          const ll = c.synthesis && c.synthesis.lagnaLord;
+          return ll
+            ? `<li><span class="cid-glyph">⚚</span><span class="cid-label">Ruler</span>
+        <span class="cid-val">${ll.key}<small>${ll.dignity}, ${ll.band}</small></span></li>`
+            : "";
+        })()}
       </ul>
       <div class="cid-arch">${archetype}</div>
       <ul class="cid-stats">${bars}</ul>
@@ -1199,7 +1209,7 @@ function renderSituationCards(c) {
       <div class="vc-emoji">${DOMAINS[key].emoji}</div>
       <div class="vc-kicker">${escAttr(read.kicker)}</div>
       <div class="vc-head">${escAttr(read.head)}</div>
-      <div class="vc-line">${escAttr(domainLine(read))}</div>
+      <div class="vc-line">${domainLineHtml(read)}</div>
       <button type="button" class="vibe-cta" data-cta="domain:${escAttr(key)}">where should my energy go? →</button>
     </div>`;
   }).join("");

@@ -1906,3 +1906,11 @@ body.kb-open .tab-bar { transform: translateY(110%); }
   cursor: pointer; transition: background .15s ease;
 }
 .pwa-modal-close:hover { background: var(--sky-deep); }
+
+/* The one phrase on a situation card that carries the D1-vs-varga finding.
+   Emphasised because it is the only thing on the card the user could not have
+   guessed from the headline. */
+.vc-situation .vc-line b {
+  font-weight: 600;
+  color: var(--accent, currentColor);
+}
