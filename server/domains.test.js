@@ -112,6 +112,41 @@ test("the stale context instructs the model not to invent placements", () => {
   const ctx = domainContext(read);
   assert.ok(ctx.length > 0, "stale context is non-empty");
   assert.match(ctx, /STALE/, "context labels the stale state");
+  assert.match(ctx, /Domain:.*friendships/i, "context names the domain");
   assert.match(ctx, /missing or predates/i, "context explains the missing data");
   assert.match(ctx, /not in chart placements/i, "context forbids invented structure");
+});
+
+test("the loud case with loudWhere='house' names the domain house, not deictic 'there'", () => {
+  // Build a chart with 2+ occupants in the career house so loudWhere="house".
+  // Cancer asc (signIndex 2), career (10th = Pisces at signIndex 11, lord Jupiter).
+  // Jupiter + Sun + Mercury in 10th → 3 occupants → loudWhere="house".
+  const c = JSON.parse(JSON.stringify(CHART));
+  c.ascendant.signIndex = 2;  // Cancer
+  const putAt = (key, signIndex) => {
+    const p = c.planets.find(x => x.key === key);
+    p.signIndex = signIndex;
+    p.house = ((signIndex - 2 + 12) % 12) + 1;  // house formula with Cancer asc
+  };
+  putAt("Jupiter", 11);   // Pisces, 10th house (career lord)
+  putAt("Sun", 11);       // Also in 10th (occupant 2)
+  putAt("Mercury", 11);   // Also in 10th (occupant 3, benefic)
+  // Put the rest elsewhere
+  putAt("Moon", 0);
+  putAt("Mars", 1);
+  putAt("Venus", 3);
+  putAt("Saturn", 4);
+  putAt("Rahu", 5);
+  putAt("Ketu", 6);
+
+  c.synthesis = computeSynthesis(c);
+
+  const read = domainRead(c, "career");
+  assert.equal(read.loudWhere, "house", `must have loudWhere='house', got '${read.loudWhere}'`);
+  const line = domainLine(read);
+
+  // The line must name the specific house (10th), not use deictic "right there"
+  assert.match(line, /10th/, `line must name the 10th house: ${line}`);
+  assert.ok(!/right there/i.test(line), `line must NOT say 'right there': ${line}`);
+  assert.match(line, /right in the 10th/, `line must say 'right in the 10th': ${line}`);
 });

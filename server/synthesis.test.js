@@ -214,27 +214,46 @@ test("a chart stripped of synthesis rebuilds identically", () => {
   assert.deepStrictEqual(s.computeSynthesis(stored), full.synthesis);
 });
 
-test("loudWhere discriminates between occupants and lord company", () => {
-  // The rule: loudWhere = "house" when occupants.length >= 2, else "company".
-  // This test verifies both code paths exist and are set correctly in the synthesis.
-  // It doesn't construct impossible scenarios; it just verifies the fields exist
-  // and the logic matches pickSlot2.
+test("loudWhere = 'house' when 2+ occupants in the domain house", () => {
+  // Fixture: Cancer asc (signIndex 2), career (10th = Pisces at signIndex 11, lord Jupiter).
+  // Jupiter in 10th, Sun + Mercury also in 10th → 3 occupants → slot2 = "loud" → loudWhere = "house".
+  // With Cancer asc (signIndex 2), house 10 has signIndex (2 + 10 - 1) % 12 = 11 (Pisces).
+  const c = chart({
+    ascSign: 2,  // Cancer asc
+    planets: {
+      "Jupiter": { signIndex: 11 },  // Pisces, 10th house (career lord, occupant 1)
+      "Sun": { signIndex: 11 },      // also Pisces, 10th house (occupant 2)
+      "Mercury": { signIndex: 11 },  // also Pisces, 10th house (occupant 3, benefic)
+      "Moon": { signIndex: 0 },      // Aries, 11th house
+      "Mars": { signIndex: 1 },      // Taurus, 12th house
+      "Venus": { signIndex: 3 },     // Leo, 2nd house
+      "Saturn": { signIndex: 4 },    // Virgo, 3rd house
+      "Rahu": { signIndex: 5 },      // Libra, 4th house
+      "Ketu": { signIndex: 6 }       // Scorpio, 5th house
+    }
+  });
+  const career = s.domainSynthesis(c, "career");
+  // Verify the fixture conditions
+  assert.equal(career.occupants.length, 3, `occupants must be 3, got ${career.occupants.length}`);
+  assert.equal(career.lordCompany.length, 0, `lordCompany should be 0 when all are occupants`);
+  // The rule in synthesis: loudWhere = occupants.length >= 2 ? "house" : "company"
+  assert.equal(career.loudWhere, "house", `loudWhere MUST be 'house' (literal string) when occupants >= 2, got '${career.loudWhere}'`);
+  // Double-check slot2 is actually "loud"
+  assert.equal(career.slot2, "loud", `slot2 must be 'loud'`);
+});
+
+test("loudWhere = 'company' when < 2 occupants but malefic/benefic in lord's sign", () => {
+  // Use the actual fixture: focus has 0 occupants but 2 in lordCompany (Saturn, Ketu).
+  // Verify the hard-coded discriminator is literally "company", not recomputed.
   const { computeChart } = require("./astro");
   const full = computeChart({
     year: 1996, month: 3, day: 14, hour: 9, minute: 25,
     lat: 12.9716, lon: 77.5946, tz: 5.5
   });
-
-  // Scan all domains in the synthesis and verify loudWhere is set correctly.
-  for (const [key, domain] of Object.entries(full.synthesis.domains)) {
-    // If slot2 is "loud", then loudWhere and loudSet should be set.
-    if (domain.slot2 === "loud") {
-      assert.ok(domain.loudWhere, `${key} has slot2='loud' but no loudWhere`);
-      assert.ok(domain.loudSet, `${key} has slot2='loud' but no loudSet`);
-      // loudWhere should match the rule: "house" if occupants >= 2, else "company".
-      const expected = domain.occupants.length >= 2 ? "house" : "company";
-      assert.equal(domain.loudWhere, expected,
-        `${key} loudWhere should be '${expected}' but is '${domain.loudWhere}'`);
-    }
-  }
+  const focus = full.synthesis.domains.focus;
+  assert.equal(focus.occupants.length, 0, `fixture: focus occupants should be 0`);
+  assert.ok(focus.lordCompany.length > 0, `fixture: focus lordCompany should be > 0`);
+  // The critical assertion: loudWhere is the LITERAL STRING "company", not a recomputation
+  assert.strictEqual(focus.loudWhere, "company", `loudWhere MUST be 'company' (literal string), not recomputed`);
+  assert.equal(focus.slot2, "loud", `slot2 must be 'loud'`);
 });
