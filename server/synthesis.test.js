@@ -5,14 +5,15 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const s = require("./synthesis");
+const { SIGN_NAMES } = require("./dignity");
 
 // A chart is built by hand rather than through computeChart, because
 // computeChart reads Date.now() for transits and the running dasha and would
 // make these tests drift with the calendar.
 function chart({ ascSign = 1, planets = {}, d9 = {}, vargas = {}, maha = "Ketu", antar = "Venus" } = {}) {
   const KEYS = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu", "Ketu"];
-  const base = k => ({ key: k, signIndex: 0, lon: 0, retro: false, ...(planets[k] || {}) });
-  const withHouse = p => ({ ...p, house: ((p.signIndex - ascSign + 12) % 12) + 1 });
+  const base = k => ({ key: k, signIndex: 0, sign: SIGN_NAMES[0], lon: 0, retro: false, ...(planets[k] || {}) });
+  const withHouse = p => ({ ...p, house: ((p.signIndex - ascSign + 12) % 12) + 1, sign: SIGN_NAMES[p.signIndex] });
   const list = KEYS.map(k => withHouse(base(k)));
 
   const navPlanets = KEYS.map(k => {
@@ -160,4 +161,18 @@ test("computeSynthesis covers every domain", () => {
     ["career", "focus", "friendships", "home", "situationships"]
   );
   assert.ok(out.lagnaLord.band);
+});
+
+test("the domain sign is the house cusp sign, not the lord's sign", () => {
+  // Taurus ascendant, Saturn in Gemini, career (10th house = Aquarius).
+  // The domain sign should be Aquarius (the 10th cusp), not Gemini (Saturn's sign).
+  const c = chart({
+    ascSign: 1,                              // Taurus asc
+    planets: { Saturn: { signIndex: 2 } }   // Gemini (signIndex 2)
+  });
+  const r = s.domainSynthesis(c, "career");
+  assert.equal(r.sign, "Aquarius", "domain sign is the house cusp");
+  assert.equal(r.signIndex, 10, "signIndex is 10");
+  assert.equal(r.promise.sign, "Gemini", "but the lord's own sign is Gemini");
+  assert.notEqual(r.sign, r.promise.sign, "they disagree when lord doesn't sit in its own house");
 });

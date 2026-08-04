@@ -16,7 +16,7 @@
 // alone — rather than off the 10th house and then D10 — is the classic varga
 // error and produces readings untethered from the birth chart.
 
-const { gradePlanet, dignityOf, isCombust, SIGN_LORD } = require("./dignity");
+const { gradePlanet, dignityOf, isCombust, SIGN_LORD, SIGN_NAMES } = require("./dignity");
 
 // The structural half of the domain table. The voice half — emoji, kicker,
 // headline, the question each card asks — lives in public/domains.js, because
@@ -198,7 +198,7 @@ function domainSynthesis(chart, key) {
 
   return {
     key,
-    house: spec.house, second: spec.second, sign: lord.sign, signIndex: signIdx,
+    house: spec.house, second: spec.second, sign: SIGN_NAMES[signIdx], signIndex: signIdx,
     lordKey, promise, sustain, verdict,
     occupants, secondOccupants, lordCompany,
     maha, antar, eraTouches, slot2
