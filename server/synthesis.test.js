@@ -189,3 +189,16 @@ test("computeChart attaches synthesis to a real chart", () => {
   // The career read must have actually looked at D10, not at D1 twice.
   assert.equal(c.synthesis.domains.career.sustain.varga, "D10");
 });
+
+test("chartToText ranks the vargas instead of dumping them flat", () => {
+  const { computeChart, chartToText } = require("./astro");
+  const txt = chartToText(computeChart({
+    year: 1996, month: 3, day: 14, hour: 9, minute: 25,
+    lat: 12.9716, lon: 77.5946, tz: 5.5
+  }));
+  assert.ok(/PRIMARY VARGAS/.test(txt), "the anchors get their own section");
+  assert.ok(/lagna lord/i.test(txt), "the lagna lord condition is stated");
+  assert.ok(/supplementary/i.test(txt), "the remaining vargas are marked as reference");
+  // The primary section must precede the supplementary table.
+  assert.ok(txt.indexOf("PRIMARY VARGAS") < txt.indexOf("supplementary"));
+});
