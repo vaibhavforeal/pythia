@@ -1100,7 +1100,8 @@ git commit -m "fix: rebuild synthesis when an older saved chat is reopened"
 - Produces (browser globals, plus CommonJS exports for tests):
   - `DOMAINS` — copy only, keyed identically to `DOMAIN_SPEC`
   - `domainRead(chart, key)` — merges copy with `chart.synthesis.domains[key]`
-  - `domainLine(read) -> string` — two slots
+  - `domainLine(read) -> string` — two slots, plain text
+  - `domainLineHtml(read) -> string` — the same line escaped, verdict phrase wrapped in `<b>`
   - `domainContext(read) -> string` — the tiered block
   - `FOUR_SLOTS` — unchanged, still exported
 
@@ -1115,7 +1116,9 @@ Create `server/domains.test.js`:
 // the divergence and nothing else.
 const test = require("node:test");
 const assert = require("node:assert");
-const { DOMAINS, domainRead, domainLine, domainContext } = require("../public/domains.js");
+const {
+  DOMAINS, domainRead, domainLine, domainLineHtml, domainContext
+} = require("../public/domains.js");
 const { DOMAIN_SPEC, computeSynthesis } = require("./synthesis");
 const { computeChart } = require("./astro");
 
@@ -1172,6 +1175,16 @@ test("divergence suppresses the era clause", () => {
   const line = domainLine(read);
   assert.match(line, /D10/);
   assert.ok(!/era/i.test(line), `the era leaked into the line: ${line}`);
+});
+
+test("the html line escapes its fragments and emphasises only the verdict", () => {
+  const read = domainRead(CHART, "career");
+  const html = domainLineHtml(read);
+  assert.ok(!/<(?!\/?b>)/.test(html), `only <b> may appear: ${html}`);
+  // Injected markup in the copy must come back escaped, not live.
+  const hostile = { ...read, houseLabel: '<img src=x onerror=alert(1)>', stale: true };
+  assert.ok(!/<img/.test(domainLineHtml(hostile)));
+  assert.match(domainLineHtml(hostile), /&lt;img/);
 });
 
 test("the model context states the hierarchy rather than implying it", () => {
@@ -1345,11 +1358,40 @@ function secondSentence(read) {
   }
 }
 
-/** One or two sentences. Never three. */
+/** One or two sentences. Never three. Plain text. */
 function domainLine(read) {
   if (!read) return "";
   if (read.stale) return `Your ${read.houseLabel} — open this one up to see where the energy goes.`;
   return [promiseSentence(read), secondSentence(read)].filter(Boolean).join(" ");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/**
+ * The same line, escaped, with the verdict phrase emphasised.
+ *
+ * Everything here is server-computed from a fixed vocabulary, so there is no
+ * live injection vector — but the card is rendered with innerHTML, and an
+ * unescaped path through it is the kind of thing that stops being safe the
+ * first time someone puts a person's name into a domain line. Escape the
+ * fragments, then add the one tag we actually want.
+ */
+function domainLineHtml(read) {
+  if (!read) return "";
+  if (read.stale) return esc(domainLine(read));
+  const parts = [esc(promiseSentence(read))];
+  const second = secondSentence(read);
+  if (read.slot2 === "divergence" && second) {
+    const phrase = VERDICT_PHRASE[read.verdict];
+    const [before] = second.split(phrase);
+    parts.push(`${esc(before)}<b>${esc(phrase)}</b>.`);
+  } else if (second) {
+    parts.push(esc(second));
+  }
+  return parts.join(" ");
 }
 
 /**
@@ -1415,7 +1457,9 @@ const FOUR_SLOTS =
   "no preamble, no disclaimers.";
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { DOMAINS, domainRead, domainLine, domainContext, FOUR_SLOTS, HOUSE_MEANING };
+  module.exports = {
+    DOMAINS, domainRead, domainLine, domainLineHtml, domainContext, FOUR_SLOTS, HOUSE_MEANING
+  };
 }
 ```
 
@@ -1478,22 +1522,23 @@ Append to `public/styles.css`:
 }
 ```
 
-- [ ] **Step 3: Wrap the verdict phrase in `<b>`**
+- [ ] **Step 3: Render the escaped, emphasised line**
 
-In `public/domains.js`, in `secondSentence`, change the `divergence` return so the verdict phrase is emphasised:
+`domainLineHtml` (Task 7) already escapes every fragment and wraps only the verdict phrase in `<b>`. Swap the render to use it.
 
-```js
-      return `In the ${su.varga}, ${VARGA_VOICE[su.varga] || "the divisional chart"}, ` +
-        `that same ${read.lordKey} ${dir} — <b>${VERDICT_PHRASE[read.verdict]}</b>.`;
-```
-
-Then in `public/app.js:1202`, change `${escAttr(domainLine(read))}` to `${domainLine(read)}` — the line is now built from a fixed vocabulary of planet names, house numbers and canned phrases with no user input in it, so the escape is what would break the markup.
-
-Update the assertion in `server/domains.test.js` that counts sentences to strip tags first:
+In `public/app.js:1202`, change:
 
 ```js
-    const line = domainLine(domainRead(CHART, key)).replace(/<[^>]+>/g, "");
+      <div class="vc-line">${escAttr(domainLine(read))}</div>
 ```
+
+to:
+
+```js
+      <div class="vc-line">${domainLineHtml(read)}</div>
+```
+
+Do **not** wrap this in `escAttr` — that would escape the `<b>` too. `domainLineHtml` is the sanitising boundary here, and it escapes each fragment before adding the one tag. `secondSentence` stays plain text so `domainLine` remains usable for assertions.
 
 - [ ] **Step 4: Verify in the browser**
 
@@ -1508,7 +1553,7 @@ Check, in order:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/app.js public/styles.css public/domains.js server/domains.test.js
+git add public/app.js public/styles.css
 git commit -m "feat: show the lagna lord baseline once, and emphasise the varga verdict"
 ```
 
