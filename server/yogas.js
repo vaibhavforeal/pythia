@@ -7,19 +7,11 @@
 // trikona lord links), Dhana, Neecha Bhanga Raja, Vipreet Raja, the lunar
 // Sunapha/Anapha/Durudhara/Kemadruma set, Kala Sarpa, and Parivartana.
 
-// Lord of each sign (Aries→Pisces), matching astro.js SIGNS.
-const SIGN_LORD = [
-  "Mars", "Venus", "Mercury", "Moon", "Sun", "Mercury",
-  "Venus", "Mars", "Jupiter", "Saturn", "Saturn", "Jupiter"
-];
-const EXALT_SIGN = { Sun: 0, Moon: 1, Mars: 9, Mercury: 5, Jupiter: 3, Venus: 11, Saturn: 6 };
-const DEBIL_SIGN = { Sun: 6, Moon: 7, Mars: 3, Mercury: 11, Jupiter: 9, Venus: 5, Saturn: 0 };
-const OWN_SIGNS = {
-  Sun: [4], Moon: [3], Mars: [0, 7], Mercury: [2, 5],
-  Jupiter: [8, 11], Venus: [1, 6], Saturn: [9, 10]
-};
-const EXALTED_IN_SIGN = {}; // sign index → planet exalted there
-for (const [p, s] of Object.entries(EXALT_SIGN)) EXALTED_IN_SIGN[s] = p;
+// Dignity tables live in dignity.js so the synthesis engine and the yoga
+// detector cannot drift apart.
+const {
+  SIGN_LORD, EXALT_SIGN, DEBIL_SIGN, OWN_SIGNS, EXALTED_IN_SIGN
+} = require("./dignity");
 
 const MAHAPURUSHA = { Mars: "Ruchaka", Mercury: "Bhadra", Jupiter: "Hamsa", Venus: "Malavya", Saturn: "Sasa" };
 const SEVEN = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"];
