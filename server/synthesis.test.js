@@ -176,3 +176,16 @@ test("the domain sign is the house cusp sign, not the lord's sign", () => {
   assert.equal(r.promise.sign, "Gemini", "but the lord's own sign is Gemini");
   assert.notEqual(r.sign, r.promise.sign, "they disagree when lord doesn't sit in its own house");
 });
+
+test("computeChart attaches synthesis to a real chart", () => {
+  const { computeChart } = require("./astro");
+  const c = computeChart({
+    year: 1996, month: 3, day: 14, hour: 9, minute: 25,
+    lat: 12.9716, lon: 77.5946, tz: 5.5
+  });
+  assert.ok(c.synthesis, "synthesis is attached");
+  assert.ok(c.synthesis.lagnaLord.key, "the lagna lord is named");
+  assert.equal(Object.keys(c.synthesis.domains).length, 5);
+  // The career read must have actually looked at D10, not at D1 twice.
+  assert.equal(c.synthesis.domains.career.sustain.varga, "D10");
+});

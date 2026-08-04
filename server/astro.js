@@ -10,6 +10,7 @@ const { computeDivisionals } = require("./vargas");
 const { computeTransits, computeSadeSati } = require("./transits");
 const { computeAshtakavarga } = require("./ashtakavarga");
 const { detectYogas, yogasToText } = require("./yogas");
+const { computeSynthesis } = require("./synthesis");
 
 const PLANET_ABBR = {
   Sun: "Su", Moon: "Mo", Mars: "Ma", Mercury: "Me", Jupiter: "Ju",
@@ -232,6 +233,10 @@ function computeChart(input) {
   const moon = planets.find(p => p.key === "Moon");
   const dasha = computeDasha(moon.lon, { year, month, day, hour, minute, tz });
 
+  // Synthesis reads the rashi, the navamsa, the divisionals and the dasha, so
+  // it has to run after all four exist.
+  const synthesis = computeSynthesis({ ascendant, planets, navamsa, divisionals, dasha });
+
   const nowMs = Date.now();
   const transits = computeTransits(moon.signIndex, ascSign, nowMs);
   const sadeSati = computeSadeSati(moon.signIndex, nowMs);
@@ -257,6 +262,7 @@ function computeChart(input) {
     ashtakavarga,
     yogas,
     dasha,
+    synthesis,
     transits,
     sadeSati
   };
