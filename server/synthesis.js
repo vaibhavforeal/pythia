@@ -185,6 +185,12 @@ function domainSynthesis(chart, key) {
     .filter(p => MALEFIC.includes(p.key) || BENEFIC.includes(p.key))
     .map(p => p.key);
 
+  // Which set is actually "loud", and where it sits. The renderer uses this to
+  // describe the placement correctly: "in that house" vs "alongside the lord".
+  // This owns the threshold so the renderer never has to re-derive it.
+  const loudSet = occupants.length >= 2 ? occupants : lordCompany;
+  const loudWhere = occupants.length >= 2 ? "house" : "company";
+
   // TIER 3 — shade. Three ways the running era can touch this part of life.
   const maha = (chart.dasha && chart.dasha.maha && chart.dasha.maha.lord) || null;
   const antar = (chart.dasha && chart.dasha.antar && chart.dasha.antar.lord) || null;
@@ -200,7 +206,7 @@ function domainSynthesis(chart, key) {
     key,
     house: spec.house, second: spec.second, sign: SIGN_NAMES[signIdx], signIndex: signIdx,
     lordKey, promise, sustain, verdict,
-    occupants, secondOccupants, lordCompany,
+    occupants, secondOccupants, lordCompany, loudSet, loudWhere,
     maha, antar, eraTouches, slot2
   };
 }

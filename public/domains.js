@@ -128,9 +128,13 @@ function secondSentence(read) {
         `that same ${read.lordKey} ${dir} — ${VERDICT_PHRASE[read.verdict]}.`;
     }
     case "loud": {
-      const who = read.occupants.length >= 2 ? read.occupants : read.lordCompany;
-      return `${andList(who)} ${who.length > 1 ? "sit" : "sits"} right there, ` +
-        `which makes this area loud for you.`;
+      if (read.loudWhere === "house") {
+        return `${andList(read.loudSet)} ${read.loudSet.length > 1 ? "sit" : "sits"} right in the ${ord(read.house)}, ` +
+          `which makes this area loud for you.`;
+      } else {
+        return `${andList(read.loudSet)} ${read.loudSet.length > 1 ? "sit" : "sits"} alongside the ${read.lordKey}, ` +
+          `which makes this area loud for you.`;
+      }
     }
     case "agreement":
       return `The ${su.varga} says the same thing — ${VERDICT_PHRASE[read.verdict]}.`;
@@ -183,7 +187,13 @@ function domainLineHtml(read) {
  * that the house lord's condition outranks the running dasha.
  */
 function domainContext(read) {
-  if (!read || read.stale) return "";
+  if (!read) return "";
+  if (read.stale) {
+    return `STALE — The birth chart data is missing or predates this analysis. ` +
+      `No structural read is available. Ground the answer in what the person tells you, ` +
+      `not in chart placements, houses, or timing. Ask clarifying questions rather than ` +
+      `inventing a chart structure from their description.`;
+  }
   const L = [];
   const l = read.lagnaLord;
   if (l) {

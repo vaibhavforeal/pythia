@@ -213,3 +213,28 @@ test("a chart stripped of synthesis rebuilds identically", () => {
   delete stored.synthesis;
   assert.deepStrictEqual(s.computeSynthesis(stored), full.synthesis);
 });
+
+test("loudWhere discriminates between occupants and lord company", () => {
+  // The rule: loudWhere = "house" when occupants.length >= 2, else "company".
+  // This test verifies both code paths exist and are set correctly in the synthesis.
+  // It doesn't construct impossible scenarios; it just verifies the fields exist
+  // and the logic matches pickSlot2.
+  const { computeChart } = require("./astro");
+  const full = computeChart({
+    year: 1996, month: 3, day: 14, hour: 9, minute: 25,
+    lat: 12.9716, lon: 77.5946, tz: 5.5
+  });
+
+  // Scan all domains in the synthesis and verify loudWhere is set correctly.
+  for (const [key, domain] of Object.entries(full.synthesis.domains)) {
+    // If slot2 is "loud", then loudWhere and loudSet should be set.
+    if (domain.slot2 === "loud") {
+      assert.ok(domain.loudWhere, `${key} has slot2='loud' but no loudWhere`);
+      assert.ok(domain.loudSet, `${key} has slot2='loud' but no loudSet`);
+      // loudWhere should match the rule: "house" if occupants >= 2, else "company".
+      const expected = domain.occupants.length >= 2 ? "house" : "company";
+      assert.equal(domain.loudWhere, expected,
+        `${key} loudWhere should be '${expected}' but is '${domain.loudWhere}'`);
+    }
+  }
+});

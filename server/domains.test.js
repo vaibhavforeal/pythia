@@ -69,10 +69,23 @@ test("the html line escapes its fragments and emphasises only the verdict", () =
   const read = domainRead(CHART, "career");
   const html = domainLineHtml(read);
   assert.ok(!/<(?!\/?b>)/.test(html), `only <b> may appear: ${html}`);
-  // Injected markup in the copy must come back escaped, not live.
-  const hostile = { ...read, houseLabel: '<img src=x onerror=alert(1)>', stale: true };
-  assert.ok(!/<img/.test(domainLineHtml(hostile)));
-  assert.match(domainLineHtml(hostile), /&lt;img/);
+  // Injected markup in the copy must come back escaped, not live. Test promiseSentence path.
+  const hostile1 = { ...read, houseLabel: '<img src=x onerror=alert(1)>' };
+  assert.ok(!/<img/.test(domainLineHtml(hostile1)));
+  assert.match(domainLineHtml(hostile1), /&lt;img/);
+  // Also test the secondSentence path: force slot2 to "shade" so maha appears.
+  const hostile2 = { ...read, slot2: "shade", maha: '<script>alert(1)</script>', eraTouches: "rules it" };
+  assert.ok(!/<script/.test(domainLineHtml(hostile2)));
+  assert.match(domainLineHtml(hostile2), /&lt;script/);
+});
+
+test("the verdict phrase is emphasised with <b> tags on divergence", () => {
+  const read = domainRead(CHART, "career");
+  // Career in this chart has divergence (grows-into-it)
+  assert.equal(read.slot2, "divergence", "career should have divergence slot2");
+  const html = domainLineHtml(read);
+  // The verdict phrase "this one you grow into" should be wrapped in <b>.
+  assert.match(html, /<b>this one you grow into<\/b>/, `<b> tags must wrap the verdict: ${html}`);
 });
 
 test("the model context states the hierarchy rather than implying it", () => {
@@ -90,4 +103,15 @@ test("a chart with no synthesis still renders a line", () => {
   const read = domainRead(stale, "friendships");
   assert.ok(read, "domainRead survives a stale chart");
   assert.ok(domainLine(read).length > 0);
+});
+
+test("the stale context instructs the model not to invent placements", () => {
+  const stale = JSON.parse(JSON.stringify(CHART));
+  delete stale.synthesis;
+  const read = domainRead(stale, "friendships");
+  const ctx = domainContext(read);
+  assert.ok(ctx.length > 0, "stale context is non-empty");
+  assert.match(ctx, /STALE/, "context labels the stale state");
+  assert.match(ctx, /missing or predates/i, "context explains the missing data");
+  assert.match(ctx, /not in chart placements/i, "context forbids invented structure");
 });
