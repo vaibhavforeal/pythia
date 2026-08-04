@@ -177,10 +177,18 @@ still computed and still reaches the model — it is simply not printed.
 slot 2 precedence
   1. DIVERGENCE   verdict is "looks better than it holds" or "grows into it"
   2. LOUD HOUSE   2+ occupants, or a malefic/benefic conjunct the lord
-  3. AGREEMENT    verdict is "holds" or "needs building"
+  3. AGREEMENT    verdict is "needs building"
   4. SHADE        the dasha touches this house
-  5. — nothing. A one-sentence card is a valid card.
+  5. AGREEMENT    verdict is "holds"
+  6. — nothing. A one-sentence card is a valid card.
 ```
+
+The agreement cases split deliberately. "Needs building" is a real finding and
+outranks the era. A bare "holds" is the least surprising thing a card can say,
+so it sits below the era touch — ranked above it, "holds" would fire on every
+ordinary chart and the shade branch would be unreachable. The dasha still ranks
+under every structural signal, which is the point; it is simply not ranked under
+"nothing to report".
 
 Ranking by divergence is the point: the most useful thing to say is where the
 tiers disagree, which is the entire reason to compute a varga. The dasha drops to

@@ -723,15 +723,21 @@ function lagnaLordCondition(chart) {
  * still computed and still reaches the model — it is just not shown.
  *
  * Divergence ranks first because the most useful thing to say is where the
- * tiers disagree, which is the entire reason to compute a varga. Shade ranks
- * last because the dasha is the least informative signal when the structure is
- * already loud.
+ * tiers disagree, which is the entire reason to compute a varga.
+ *
+ * Note the split in the agreement cases. "Needs building" is a real finding and
+ * outranks the era. A bare "holds" is the least surprising thing a card can
+ * say, so it drops BELOW the era touch — otherwise it would fire on every
+ * ordinary chart and the shade branch could never be reached at all. The dasha
+ * still ranks under every structural signal, which is the point; it just is not
+ * ranked under "nothing to report".
  */
 function pickSlot2({ verdict, occupants, lordCompany, eraTouches }) {
   if (verdict === VERDICTS.LOOKS_BETTER || verdict === VERDICTS.GROWS) return "divergence";
   if (occupants.length >= 2 || lordCompany.length) return "loud";
-  if (verdict === VERDICTS.HOLDS || verdict === VERDICTS.NEEDS_BUILDING) return "agreement";
+  if (verdict === VERDICTS.NEEDS_BUILDING) return "agreement";
   if (eraTouches) return "shade";
+  if (verdict === VERDICTS.HOLDS) return "agreement";
   return null;
 }
 
