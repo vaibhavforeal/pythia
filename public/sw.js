@@ -25,7 +25,7 @@
 //      failures are swallowed on purpose: a background refresh that fails must
 //      never evict a working cached asset.
 
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = `pythia-shell-${VERSION}`;
 
 // Both HTML entry points plus everything they load. `/app` is the manifest's
