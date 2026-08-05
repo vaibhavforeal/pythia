@@ -106,7 +106,10 @@ server/
   yogas.js    detects named yogas (Mahapurusha, Raja, Dhana, lunar, Kala Sarpa…)
   auth.js     accounts — scrypt hashing + signed session cookies + rate limit
   store.js    users + saved people — Supabase Postgres, or local JSON fallback
-  cities.js   built-in city gazetteer (offline geocoding fallback)
+  cities.js   curated city gazetteer — merged ahead of the live geocoder so the
+              names people actually type (Bangalore, Shimoga) resolve, and the
+              picker still works offline. Also the birthplace source for
+              tools/yoga-frequency.js, so editing it means regenerating.
   skill.js    loads the Vedic system prompt
 public/
   index.html  UI

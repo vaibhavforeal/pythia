@@ -8,24 +8,24 @@
 // geography would shift them. Trailing comment on each line: Sanskrit name,
 // category, raw count, and the 95% confidence half-width in points.
 const YOGA_RARITY = {
-  "quiet power":             2.0, // Sasa Yoga · Mahapurusha · n=160 · ±0.3
-  "big brain energy":        5.5, // Bhadra Yoga · Mahapurusha · n=441 · ±0.5
-  "hard mode enabled":       6.8, // Kala Sarpa Yoga · Challenging · n=542 · ±0.6
-  "built different":         7.8, // Ruchaka Yoga · Mahapurusha · n=623 · ±0.6
-  "money moves":             7.8, // Chandra-Mangala Yoga · Dhana · n=624 · ±0.6
-  "old soul energy":         9.4, // Hamsa Yoga · Mahapurusha · n=756 · ±0.6
-  "unfairly attractive":     10.3, // Malavya Yoga · Mahapurusha · n=825 · ±0.7
-  "your people show up":     10.9, // Durudhara Yoga · Lunar · n=873 · ±0.7
-  "self-made":               21.5, // Sunapha Yoga · Lunar · n=1721 · ±0.9
-  "unbothered":              23.3, // Anapha Yoga · Lunar · n=1864 · ±0.9
-  "lone wolf arc":           29.8, // Kemadruma Yoga · Challenging · n=2381 · ±1.0
-  "secured the bag":         33.0, // Dhana Yoga · Dhana · n=2638 · ±1.0
-  "legend status":           33.7, // Gaja Kesari Yoga · Raja · n=2693 · ±1.0
+  "quiet power":             2.1, // Sasa Yoga · Mahapurusha · n=168 · ±0.3
+  "big brain energy":        5.3, // Bhadra Yoga · Mahapurusha · n=424 · ±0.5
+  "hard mode enabled":       6.7, // Kala Sarpa Yoga · Challenging · n=537 · ±0.5
+  "built different":         7.8, // Ruchaka Yoga · Mahapurusha · n=621 · ±0.6
+  "money moves":             8.0, // Chandra-Mangala Yoga · Dhana · n=640 · ±0.6
+  "old soul energy":         9.7, // Hamsa Yoga · Mahapurusha · n=773 · ±0.6
+  "unfairly attractive":     10.2, // Malavya Yoga · Mahapurusha · n=815 · ±0.7
+  "your people show up":     10.9, // Durudhara Yoga · Lunar · n=872 · ±0.7
+  "self-made":               21.7, // Sunapha Yoga · Lunar · n=1739 · ±0.9
+  "unbothered":              23.1, // Anapha Yoga · Lunar · n=1849 · ±0.9
+  "lone wolf arc":           29.7, // Kemadruma Yoga · Challenging · n=2375 · ±1.0
+  "secured the bag":         32.8, // Dhana Yoga · Dhana · n=2627 · ±1.0
+  "legend status":           33.6, // Gaja Kesari Yoga · Raja · n=2687 · ±1.0
   "underdog arc":            36.4, // Neecha Bhanga Raja Yoga · Raja · n=2908 · ±1.1
-  "iconic duo":              42.5, // Parivartana Yoga · Special · n=3404 · ±1.1
-  "speaks it into existence":50.9, // Budha-Aditya Yoga · Special · n=4076 · ±1.1
-  "villain origin story":    56.9, // Vipreet Raja Yoga — Harsha · Raja · n=4553 · ±1.1
-  "the come-up":             85.8, // Raja Yoga · Raja · n=6866 · ±0.8
+  "iconic duo":              42.6, // Parivartana Yoga · Special · n=3406 · ±1.1
+  "speaks it into existence":50.8, // Budha-Aditya Yoga · Special · n=4067 · ±1.1
+  "villain origin story":    56.7, // Vipreet Raja Yoga — Harsha · Raja · n=4534 · ±1.1
+  "the come-up":             86.2, // Raja Yoga · Raja · n=6898 · ±0.8
 };
 
 if (typeof module !== "undefined" && module.exports) module.exports = { YOGA_RARITY };

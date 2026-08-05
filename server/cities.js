@@ -79,6 +79,19 @@ const CITIES = [
   ["Sydney, Australia", -33.8688, 151.2093, 10.0],
   ["Nairobi, Kenya", -1.2921, 36.8219, 3.0],
   ["Johannesburg, South Africa", -26.2041, 28.0473, 2.0]
-].map(([name, lat, lon, tz, aka = []]) => ({ name, lat, lon, tz, aka }));
+].map(([name, lat, lon, tz, aka = []]) => {
+  // City and country are split out because only the city is searchable. Matching
+  // the whole "Bengaluru, India" string meant every prefix of "India" matched
+  // every Indian entry — enough to fill the response and hide real towns the
+  // geocoder had found. Entries without a comma (Singapore, Hong Kong) are all
+  // city.
+  const i = name.lastIndexOf(", ");
+  return {
+    name,
+    city: i === -1 ? name : name.slice(0, i),
+    country: i === -1 ? "" : name.slice(i + 2),
+    lat, lon, tz, aka
+  };
+});
 
 module.exports = { CITIES };

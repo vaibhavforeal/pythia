@@ -4,7 +4,12 @@
 //   node tools/yoga-frequency.js [sampleSize]
 //
 // Writes public/yoga-rarity.js. Re-run and commit the result whenever
-// server/yogas.js or public/yoga-names.js changes.
+// server/yogas.js, public/yoga-names.js OR server/cities.js changes.
+//
+// cities.js counts because birthplaces are drawn from it: adding or reordering
+// an entry shifts every subsequent draw, so the committed table stops matching
+// the sampling method its own header describes. It went unlisted once and the
+// table silently drifted.
 //
 // Sampling — these choices are the whole ballgame, so they're stated here and
 // echoed into the generated file:
