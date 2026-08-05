@@ -625,14 +625,20 @@ setupFriends();
 // Your own chart is the profile: stored locally and restored on load, so it
 // never has to be cast again. Anyone else is a transient view — never written
 // to myBirth, never becomes the profile.
-const MY_BIRTH_KEY = "myBirth";
 let pendingOther = false; // the next submit is a one-off, not you
 let viewingOther = false;
+
+// Which account the cached birth belongs to. localStorage is per-device, not
+// per-account, and this app supports signing out and in as someone else on the
+// same phone — so every read and write is scoped to this. See birth-cache.js.
+function currentUid() {
+  return (myAccount && myAccount.user && myAccount.user.id) || null;
+}
 
 // Local cache only — used when echoing back what the server just gave us, so we
 // don't POST it straight home again.
 function cacheMyBirth(input) {
-  try { localStorage.setItem(MY_BIRTH_KEY, JSON.stringify(input)); } catch (_) { /* private mode */ }
+  writeBirthCache(localStorage, currentUid(), input);
   syncInviteBox(); // the first cast stores the profile *after* the render runs
 }
 
@@ -657,13 +663,7 @@ function syncInviteBox() {
   if (ib) ib.hidden = !loadMyBirth();
 }
 function loadMyBirth() {
-  try {
-    const raw = localStorage.getItem(MY_BIRTH_KEY);
-    const v = raw ? JSON.parse(raw) : null;
-    return v && Number.isFinite(Number(v.year)) ? v : null;
-  } catch (_) {
-    return null;
-  }
+  return readBirthCache(localStorage, currentUid());
 }
 
 // label === null means "this is you".
@@ -2008,6 +2008,11 @@ $("logoutBtn").addEventListener("click", async () => {
   try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
   // Native builds hold the session in a token, not a cookie the server can clear.
   if (window.PythiaAuth) window.PythiaAuth.clear();
+  // Your birth details are the last per-account thing left on the device. The
+  // cache is owner-scoped so the next account could not read it anyway, but
+  // there is no reason to leave someone's date and place of birth sitting in
+  // storage after they have asked to be signed out.
+  clearBirthCache(localStorage);
   location.reload();
 });
 
