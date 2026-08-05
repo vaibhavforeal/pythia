@@ -221,6 +221,11 @@ function setupChartControls() {
     });
   }
 
+  // The ship check lost its card when the profile was cut back to life areas,
+  // so this button is now the single entry point to the compatibility form.
+  const ship = $("shipCheckBtn");
+  if (ship) ship.addEventListener("click", () => openShipCheck());
+
   const other = $("checkOther");
   if (other) {
     other.addEventListener("click", () => {
@@ -770,13 +775,6 @@ const ELEMENTS = [
 // Aries=Fire, Taurus=Earth, Gemini=Air, Cancer=Water, then repeating.
 const elementOf = i => ELEMENTS[(((i % 4) + 4) % 4)] || ELEMENTS[0];
 
-// Astrological glyph per graha, for the "era" card (Mars/Venus need ︎ to
-// stay monochrome). Rahu/Ketu use the ascending/descending node symbols.
-const PLANET_GLYPH = {
-  Sun: "☉", Moon: "☽", Mars: "♂︎", Mercury: "☿",
-  Jupiter: "♃", Venus: "♀︎", Saturn: "♄", Rahu: "☊", Ketu: "☋"
-};
-
 // Gen Z headline per Guna Milan band (thresholds set server-side in
 // gunamilan.js: poor <18, average 18-24, good 25-32, excellent ≥33).
 const SHIP = {
@@ -786,65 +784,15 @@ const SHIP = {
   poor:      { emoji: "△", head: "the stars said pause",  sub: "proceed with caution" }
 };
 
-// Gen Z gloss for the running Vimshottari dasha lord — the "era" you're in.
-// Keyed by planet name (server sends d.maha.lord / d.antar.lord).
-const PLANET_ERA = {
-  Sun:     { head: "main-character era",     line: "visibility, authority, ego glow-up. time to be seen and take the lead." },
-  Moon:    { head: "soft / all-feels era",   line: "emotions, home and comfort run the show. nurture yourself and your people." },
-  Mars:    { head: "beast-mode era",         line: "drive, courage, competition. channel the heat into the goal — don't burn out." },
-  Mercury: { head: "hustle & comms era",     line: "deals, skills, networking, side quests. your mind is the money right now." },
-  Jupiter: { head: "glow-up era",            line: "growth, luck, wisdom, expansion. say yes to the bigger thing." },
-  Venus:   { head: "soft-life & love era",   line: "romance, beauty, luxury, art. treat yourself and let people in." },
-  Saturn:  { head: "lock-in / hard-mode era", line: "discipline, patience, real results. put in the reps — it pays off later." },
-  Rahu:    { head: "chaotic-ambition era",   line: "obsession, hype, big swings, foreign vibes. dream huge but stay grounded." },
-  Ketu:    { head: "detachment / inner era", line: "letting go, spirituality, quiet endings. less noise, more meaning." }
-};
-
-// Gen Z one-liner per yoga category (server tags each yoga with .category).
-// Favorable yogas become "green flags"; challenging ones surface under Heads-up.
-// Multiple yogas can share a category, so cards group by category (see
-// groupYogas) to avoid repeating the same gloss.
-const YOGA_VIBES = {
-  Mahapurusha: { emoji: "✶", title: "great-person energy", line: "a rare 'great person' placement — genuine main-character coding." },
-  Raja:        { emoji: "✦", title: "built to rise",       line: "power & status yoga — you climb, and people notice." },
-  Dhana:       { emoji: "◈", title: "money magnet",        line: "wealth yoga — the bag follows when you lean in." },
-  Lunar:       { emoji: "☾", title: "emotionally held",    line: "support yoga — you're rarely left carrying it alone." },
-  Special:     { emoji: "✧", title: "one of one",          line: "a rare combo — a genuine one-of-one edge." },
-  Challenging: { emoji: "△", title: "plot-twist arc",      line: "an intense pattern — real growth through the hard stuff." }
-};
-
 // YOGA_ALIAS / yogaAlias() live in yoga-names.js (shared with the rarity
 // generator); YOGA_RARITY in the generated yoga-rarity.js. Both load first.
 
 // How rare a yoga is, as a share of sampled charts — see tools/yoga-frequency.js.
-// Anything at or above this is too common to call a superpower, so it renders
-// without a badge rather than bragging about a coin flip.
-const RARITY_BADGE_MAX = 25;
+// Only nerd mode surfaces this now; the profile no longer carries a yoga card.
 function yogaRarity(alias) {
   if (typeof YOGA_RARITY === "undefined") return null;
   const pct = YOGA_RARITY[alias];
   return Number.isFinite(pct) ? pct : null;
-}
-// "6%" for the genuinely rare, "<1%" rather than "0%" for the very rare.
-function rarityLabel(pct) {
-  if (pct === null || pct >= RARITY_BADGE_MAX) return "";
-  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
-}
-
-// Group yogas by category into de-duplicated rows (emoji, title, line, names[]),
-// so several yogas of one category collapse into a single card row.
-function groupYogas(yogas) {
-  const order = [];
-  const by = {};
-  for (const y of yogas || []) {
-    if (!by[y.category]) { by[y.category] = []; order.push(y.category); }
-    const alias = yogaAlias(y);
-    if (!by[y.category].includes(alias)) by[y.category].push(alias);
-  }
-  return order.map(cat => {
-    const g = YOGA_VIBES[cat] || { emoji: "✅", title: cat, line: "" };
-    return { emoji: g.emoji, title: g.title || cat, line: g.line, names: by[cat] };
-  });
 }
 
 function renderCosmicId(c) {
@@ -1028,178 +976,18 @@ function shareMatch(d) {
   });
 }
 
-// ---- Daily cosmic weather -------------------------------------------------
-// The transit Moon's house from the natal Moon (Chandra gochar, 1–12) is the
-// classic daily indicator. Auspicious houses (1,3,6,7,10,11) read upbeat;
-// mixed (4,9); tough (8=Chandrashtama, 12) read as rest days.
-const DAILY = {
-  1:  { head: "main-character day", line: "the Moon's on your sign — you're the moment. lead with it.", mood: "good" },
-  2:  { head: "soft-launch your bag", line: "good energy for money, food and slow wins. treat yourself.", mood: "good" },
-  3:  { head: "unstoppable energy", line: "courage is high — send the text, start the thing. you win today.", mood: "good" },
-  4:  { head: "cozy recharge", line: "big homebody energy. protect your peace, don't force it.", mood: "mixed" },
-  5:  { head: "romance & main quests", line: "creative, flirty, a little lucky. put yourself out there.", mood: "good" },
-  6:  { head: "you vs the problem", line: "upper hand on rivals and the to-do list. handle it.", mood: "good" },
-  7:  { head: "connection mode", line: "people, dates, collabs flow. say yes to the plans.", mood: "good" },
-  8:  { head: "low-key rest day", line: "Chandrashtama — energy dips. rest, don't start big things.", mood: "low" },
-  9:  { head: "keep it steady", line: "luck's a little shy today. don't gamble the important stuff.", mood: "mixed" },
-  10: { head: "lock in", line: "career and action are favored. get the hard thing done.", mood: "good" },
-  11: { head: "wins & clout", line: "gains, good news, social glow — best day of the cycle.", mood: "good" },
-  12: { head: "battery low", line: "expenses and tiredness creep in. slow down, guard your energy.", mood: "low" }
-};
-
-const WX_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function fmtWeatherDate(iso) {
-  if (!iso) return "";
-  const [, m, d] = iso.split("-").map(Number);
-  return WX_MONTHS[(m || 1) - 1] + " " + (d || "");
-}
-
-// ---- Vibe-card feed builders ----------------------------------------------
-// Each returns an HTML string; renderChartCard stitches them into the sidebar
-// profile (#profile). The
-// "go deeper →" buttons carry a data-cta the delegated handler turns into a
-// grounded chat question (see handleCta).
-
-// Today's vibe — the transit Moon's house from the natal Moon (reuses DAILY).
-function renderTodayCard(c) {
-  const tm = c.transits && c.transits.planets && c.transits.planets.find(p => p.key === "Moon");
-  if (!tm) return "";
-  const w = DAILY[tm.fromMoon] || DAILY[1];
-  const notes = [];
-  if (c.sadeSati && c.sadeSati.active) notes.push("Sade Sati" + (c.sadeSati.phase ? " (" + c.sadeSati.phase + ")" : ""));
-  else if (c.sadeSati && c.sadeSati.smallPanoti && c.sadeSati.smallPanoti.active) notes.push("small panoti");
-  return `
-    <div class="vibe-card vc-today dw-${w.mood}">
-      <div class="vc-emoji">${({ good: "✦", mixed: "✧", low: "☾" })[w.mood] || "✦"}</div>
-      <div class="vc-kicker">today's vibe · ${fmtWeatherDate(c.transits.date)}</div>
-      <div class="vc-head">${w.head}</div>
-      <div class="vc-line">${w.line}</div>
-      <div class="vc-meta">☾ Moon in ${tm.sign} · ${ordJS(tm.fromMoon)} from your Moon${notes.length ? " · " + notes.join(" · ") : ""}</div>
-      <button type="button" class="vibe-cta" data-cta="today">what's today about? →</button>
-    </div>`;
-}
-
-// The era you're in — from the running Mahadasha / Antardasha lords.
-function renderEraCard(c) {
-  const d = c.dasha;
-  if (!d || !d.maha) return "";
-  const maha = PLANET_ERA[d.maha.lord] || { head: d.maha.lord + " era", line: "a big chapter of life is running." };
-  const antar = PLANET_ERA[d.antar && d.antar.lord];
-  const sub = d.antar
-    ? `<span class="vc-sub">right now: <b>${d.antar.lord}</b> sub-vibe${antar ? " — " + antar.head : ""}</span>`
-    : "";
-  // Dates arrive as DD-MM-YYYY, so the year is the LAST field, not the first.
-  const yr = s => (s || "").slice(-4);
-  return `
-    <div class="vibe-card vc-era">
-      <div class="vc-emoji vc-era-glyph">${PLANET_GLYPH[d.maha.lord] || "✦"}</div>
-      <div class="vc-kicker">the era you're in</div>
-      <div class="vc-head">${maha.head}</div>
-      <div class="vc-line">${maha.line}</div>
-      ${sub}
-      <div class="vc-meta">${PLANET_GLYPH[d.maha.lord] || "☉"} ${d.maha.lord} Mahadasha · ${yr(d.maha.start)} → ${yr(d.maha.end)}</div>
-      <button type="button" class="vibe-cta" data-cta="era">what's this era mean for me? →</button>
-    </div>`;
-}
-
-// Your green flags — favorable yogas, glossed by category.
-function renderPowerCard(c) {
-  const fav = (c.yogas || []).filter(y => y.favorable);
-  if (!fav.length) {
-    return `
-    <div class="vibe-card vc-power">
-      <div class="vc-emoji">✧</div>
-      <div class="vc-kicker">your green flags</div>
-      <div class="vc-head">quiet-luck coded</div>
-      <div class="vc-line">no loud power-yogas here — which just means your wins sneak up quietly and <b>stick</b>. underdog arc energy. ✦</div>
-      <button type="button" class="vibe-cta" data-cta="power">where's my edge? →</button>
-    </div>`;
-  }
-  const groups = groupYogas(fav);
-  const rows = groups.map(g =>
-    `<li><span class="pw-emoji">${g.emoji}</span><div>
-        <b>${g.title}</b>
-        <small>${g.line}</small>
-        <span class="pw-tag">${g.names.map(rarityChip).join("")}</span>
-      </div></li>`
-  ).join("");
-  return `
-    <div class="vibe-card vc-power">
-      <div class="vc-emoji">✧</div>
-      <div class="vc-kicker">your green flags <span class="vc-badge">${groups.length}</span></div>
-      <div class="vc-head">your superpowers</div>
-      <ul class="pw-list">${rows}</ul>
-      ${renderRarestLine(fav)}
-      <button type="button" class="vibe-cta" data-cta="power">break down my strengths →</button>
-    </div>`;
-}
-
-// A yoga name, with how rare it is when that's actually a flex.
-function rarityChip(alias) {
-  const label = rarityLabel(yogaRarity(alias));
-  return `<span class="pw-chip">${escAttr(alias)}${label ? `<i class="pw-rare">${label}</i>` : ""}</span>`;
-}
-
-// Headline the single rarest thing in the chart — the most postable fact here.
-function renderRarestLine(yogas) {
-  let best = null;
-  for (const y of yogas || []) {
-    const alias = yogaAlias(y);
-    const pct = yogaRarity(alias);
-    if (pct === null) continue;
-    if (!best || pct < best.pct) best = { alias, pct };
-  }
-  if (!best || best.pct >= RARITY_BADGE_MAX) return "";
-  const share = best.pct < 1 ? "under 1%" : `just ${Math.round(best.pct)}%`;
-  return `<div class="pw-rarest">rarest in your chart · <b>${escAttr(best.alias)}</b>
-    — ${share} of charts have it</div>`;
-}
-
-// Heads up — challenging yogas + active Sade Sati / small panoti.
-function renderHeadsUpCard(c) {
-  const items = groupYogas((c.yogas || []).filter(y => !y.favorable)).map(g => ({
-    emoji: g.emoji,
-    name: g.title,
-    line: g.line,
-    tag: g.names.map(rarityChip).join("")
-  }));
-  const ss = c.sadeSati;
-  if (ss && ss.active) {
-    items.push({
-      emoji: "♄",
-      name: "Sade Sati" + (ss.phase ? " · " + ss.phase + " phase" : ""),
-      line: "Saturn's running its long lesson arc. go gentle, don't start huge things on impulse" + (ss.end ? " — it eases up around " + ss.end + "." : ".")
-    });
-  } else if (ss && ss.smallPanoti && ss.smallPanoti.active) {
-    items.push({ emoji: "☾", name: ss.smallPanoti.type, line: "a shorter Saturn dip — pace yourself, protect your energy." });
-  }
-  if (!items.length) {
-    return `
-    <div class="vibe-card vc-heads calm">
-      <div class="vc-emoji">✓</div>
-      <div class="vc-kicker">heads up</div>
-      <div class="vc-head">all clear rn</div>
-      <div class="vc-line">no major red flags in your chart or in the sky today. cruise. ✦</div>
-      <button type="button" class="vibe-cta" data-cta="heads">any remedies for me anyway? →</button>
-    </div>`;
-  }
-  const rows = items.slice(0, 4).map(i =>
-    `<li><span class="pw-emoji">${i.emoji}</span><div><b>${escAttr(i.name)}</b><small>${i.line}</small>${i.tag ? `<span class="pw-tag">${i.tag}</span>` : ""}</div></li>`
-  ).join("");
-  return `
-    <div class="vibe-card vc-heads">
-      <div class="vc-emoji">△</div>
-      <div class="vc-kicker">heads up</div>
-      <div class="vc-head">go gentle on…</div>
-      <ul class="pw-list">${rows}</ul>
-      <button type="button" class="vibe-cta" data-cta="heads">what do i do about these? →</button>
-    </div>`;
-}
-
 // ---- Situation cards ------------------------------------------------------
+// The whole sidebar profile now: the Cosmic ID, then one card per life area.
+// The feed used to carry today's-vibe, era, green-flags and heads-up cards too,
+// but eleven cards read as a wall — and the four that went were the chart-wide
+// ones, which the model still receives in full via chartToText. Nothing was
+// lost from the reading, only from the browse surface.
+//
 // The frame lands before they type: each card opens with the structural read
-// (governing house, its ruler, where that ruler sits, what the era wants), and
-// only then offers to go deeper. See domains.js for why that ordering matters.
+// (governing house, its ruler, where that ruler sits, how the varga grades it),
+// and only then offers to go deeper. See domains.js for why that ordering
+// matters. The "go deeper →" buttons carry a data-cta the delegated handler
+// turns into a grounded chat question (see handleCta).
 function renderSituationCards(c) {
   return Object.keys(DOMAINS).map(key => {
     const read = domainRead(c, key);
@@ -1213,18 +1001,6 @@ function renderSituationCards(c) {
       <button type="button" class="vibe-cta" data-cta="domain:${escAttr(key)}">where should my energy go? →</button>
     </div>`;
   }).join("");
-}
-
-// Ship-check entry — opens the compatibility form (in the sidebar drawer).
-function renderShipCta() {
-  return `
-    <div class="vibe-card vc-ship">
-      <div class="vc-emoji">♡</div>
-      <div class="vc-kicker">ship check</div>
-      <div class="vc-head">will it work?</div>
-      <div class="vc-line">check your compatibility with anyone — crush, situationship, whoever. real Vedic math, one big verdict.</div>
-      <button type="button" class="vibe-cta" data-cta="ship">check a ship →</button>
-    </div>`;
 }
 
 // ---- Compact identity strip, pinned above the chat ------------------------
@@ -1266,14 +1042,7 @@ function renderChartCard(c) {
   const profile = $("profile");
   if (profile) {
     profile.hidden = false;
-    profile.innerHTML =
-      renderCosmicId(c) +
-      renderTodayCard(c) +
-      renderEraCard(c) +
-      renderPowerCard(c) +
-      renderHeadsUpCard(c) +
-      renderSituationCards(c) +
-      renderShipCta();
+    profile.innerHTML = renderCosmicId(c) + renderSituationCards(c);
   }
 
   const nerdHost = $("nerdHost");
@@ -1292,6 +1061,8 @@ function renderChartCard(c) {
   if (cb) cb.checked = nerdOpen;
   const co = $("checkOther");
   if (co) co.hidden = false;
+  const sc = $("shipCheckBtn");
+  if (sc) sc.hidden = false;
   syncInviteBox();
   const fh = $("profileHead");
   if (fh) fh.hidden = false;
@@ -1516,7 +1287,6 @@ function setupCards() {
 // A feed card's "go deeper →" → a grounded question streamed into the chat.
 function handleCta(kind) {
   if (!chart) return;
-  if (kind === "ship") return openShipCheck();
   if (streaming) return;
 
   // Situation cards send the same structure the card displayed, so the model
@@ -1538,20 +1308,6 @@ function handleCta(kind) {
     parts.push("", FOUR_SLOTS);
     return sendMessage(parts.join("\n"));
   }
-  const d = chart.dasha;
-  const tm = chart.transits && chart.transits.planets && chart.transits.planets.find(p => p.key === "Moon");
-  const prompts = {
-    today: tm
-      ? `What's my cosmic weather today? The transiting Moon is in ${tm.sign}, ${ordJS(tm.fromMoon)} from my natal Moon. How should I approach today, and anything to watch for?`
-      : "What's my cosmic weather today, and how should I approach it?",
-    era: d && d.maha
-      ? `I'm in my ${d.maha.lord} Mahadasha${d.antar ? " with " + d.antar.lord + " Antardasha" : ""} right now. In plain, friendly language, what does this era mean for my life, and how do I make the most of it?`
-      : "What life phase am I in right now, and what does it mean for me?",
-    power: "Break down my chart's strengths and lucky combinations (yogas) in plain, friendly language — what am I naturally good at, and how do I lean into it?",
-    heads: "What challenging placements or doshas are in my chart (and any current Sade Sati), and what simple, practical remedies suit me?"
-  };
-  const q = prompts[kind];
-  if (q) sendMessage(q);
 }
 
 // Reveal the Ship-check form (switching to the Friends tab on mobile, where the
