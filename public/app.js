@@ -230,6 +230,10 @@ function setupChartControls() {
   if (other) {
     other.addEventListener("click", () => {
       pendingOther = true;
+      // The form lives in Profile now, and this button is in Chart — on a phone
+      // that means opening a form on a tab you cannot see.
+      tabPicked = true;
+      setTab("profile");
       setFormOpen(true);
       // Blank the identity fields so nobody accidentally recasts themselves,
       // and drop the coordinates so a stale city can't be reused.
@@ -1039,10 +1043,19 @@ function renderChartCard(c) {
     banner.innerHTML = renderIdBanner(c);
   }
 
+  // Identity and interpretation render into different tabs: the Cosmic ID is
+  // who you are and sits in Profile with the account, the life-area cards are
+  // the reading and stay in Chart.
+  const cid = $("cosmicIdHost");
+  if (cid) {
+    cid.hidden = false;
+    cid.innerHTML = renderCosmicId(c);
+  }
+
   const profile = $("profile");
   if (profile) {
     profile.hidden = false;
-    profile.innerHTML = renderCosmicId(c) + renderSituationCards(c);
+    profile.innerHTML = renderSituationCards(c);
   }
 
   const nerdHost = $("nerdHost");
@@ -1868,9 +1881,11 @@ function onAuthed(user) {
   loadAccount().then(acct => {
     restoreMyChart(acct && acct.birth).then(ok => {
       // Nothing to restore means nothing to read, so on mobile open on the tab
-      // that has the form rather than an empty chat with a pointer to it. This
+      // that has the form rather than an empty chat with a pointer to it. That
+      // is Profile now — the birth details moved there with the Cosmic ID, and
+      // Chart holds only the reading, which for a new account is blank. This
       // lands a round trip late, so it defers to a tab the user already picked.
-      if (!ok && !tabPicked) setTab("chart");
+      if (!ok && !tabPicked) setTab("profile");
       loadFriends();
     });
   });

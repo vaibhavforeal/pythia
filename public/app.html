@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
-    <link rel="stylesheet" href="styles.css?v6" />
+    <link rel="stylesheet" href="styles.css?v7" />
     <!-- Served from our own origin, at a version pinned in package.json. The
          CDN URL this replaces floated to latest with no SRI, so a third party
          could change what executes here — and in the native shell that runs
@@ -75,6 +75,12 @@
           <button type="button" id="logoutBtn" class="logout">Log out</button>
         </div>
 
+        <!-- Who you are, astrologically: moon, star, rising, the lagna lord's
+             condition, the stat bars. It sits with the account rather than with
+             the reading because it is identity, not interpretation — the five
+             life-area cards are the reading, and they stay in the Chart tab. -->
+        <div id="cosmicIdHost" data-pane="profile" hidden></div>
+
         <!-- Whose chart is on screen. Your own is the profile and persists;
              anyone else is a one-off view that is never saved as your profile. -->
         <div class="profile-head" id="profileHead" data-pane="chart" hidden>
@@ -91,63 +97,6 @@
              compatibility form. -->
         <button type="button" class="check-other" id="checkOther" data-pane="chart" hidden>check someone else ↗</button>
         <button type="button" class="check-other" id="shipCheckBtn" data-pane="chart" hidden>check a ship ♡</button>
-
-        <!-- The birth form sits BELOW the reading on purpose. Your chart sticks
-             once cast, so after the first cast this is an edit affordance you go
-             looking for, not a prompt to cast again — and the reading should own
-             the top of the pane rather than the input that produced it.
-             First run still works because everything above is hidden until a
-             chart exists, so a new user sees the expanded form and nothing else.
-             The toggle is hidden until there's a chart; renderChartCard reveals
-             it and collapses the form (setFormOpen(false)). -->
-        <button type="button" class="form-toggle" id="formToggle" data-pane="chart" aria-expanded="true" aria-controls="birthForm" hidden>
-          <span class="ft-label">edit my birth details</span><span class="ft-caret">▾</span>
-        </button>
-
-        <form id="birthForm" class="birth-form" data-pane="chart">
-          <h2>your birth deets</h2>
-
-          <label>Name
-            <input type="text" id="name" maxlength="80" placeholder="e.g. Vaibhav" autocomplete="off" required />
-            <small>For name numerology &amp; saving your charts.</small>
-          </label>
-
-          <label>Birthday
-            <input type="date" id="dob" required />
-          </label>
-
-          <label>Time of birth
-            <input type="time" id="tob" step="60" required />
-            <small>Local time where you were born. Don't know it? Use 12:00.</small>
-          </label>
-
-          <label>Where you were born
-            <input list="cityList" id="city" placeholder="Type a city name…" autocomplete="off" />
-            <datalist id="cityList"></datalist>
-            <small>Just pick your city — we handle the coordinates &amp; time zone.</small>
-          </label>
-
-          <button type="button" class="advanced-toggle" id="advToggle" aria-expanded="false" aria-controls="advFields">
-            <span class="adv-label">enter coordinates manually</span><span class="adv-caret">▾</span>
-          </button>
-          <div class="advanced-fields" id="advFields" hidden>
-            <div class="row">
-              <label>Latitude
-                <input type="number" id="lat" step="0.0001" placeholder="e.g. 28.6139" />
-              </label>
-              <label>Longitude
-                <input type="number" id="lon" step="0.0001" placeholder="e.g. 77.2090" />
-              </label>
-            </div>
-            <label>UTC offset (hours)
-              <input type="number" id="tz" step="0.25" placeholder="e.g. 5.5" />
-              <small>Standard time offset. Add +1 if born during daylight saving.</small>
-            </label>
-          </div>
-
-          <button type="submit" id="computeBtn">cast my chart ✦</button>
-          <p class="err" id="formErr" hidden></p>
-        </form>
 
         <!-- Invite link: they cast their own chart on a public page, no account
              needed, and you both get the compatibility score. -->
@@ -257,6 +206,66 @@
           </form>
           <div id="matchResult" class="match-result" hidden></div>
         </div>
+
+        <!-- Your birth details are yours, so they live in Profile beside the
+             account and the saved people, not in Chart with the reading they
+             produce. Your chart sticks once cast, so after the first cast this
+             is an edit affordance you go looking for rather than a prompt to
+             cast again — and on desktop, where every pane renders at once, this
+             position keeps it below the reading rather than above it.
+             Because a new account has nothing in Chart to look at, app.js opens
+             the Profile tab on first run; otherwise a phone would land on an
+             empty tab with no way to cast. The toggle stays hidden until there
+             is a chart; renderChartCard reveals it and collapses the form
+             (setFormOpen(false)). -->
+        <button type="button" class="form-toggle" id="formToggle" data-pane="profile" aria-expanded="true" aria-controls="birthForm" hidden>
+          <span class="ft-label">edit my birth details</span><span class="ft-caret">▾</span>
+        </button>
+
+        <form id="birthForm" class="birth-form" data-pane="profile">
+          <h2>your birth deets</h2>
+
+          <label>Name
+            <input type="text" id="name" maxlength="80" placeholder="e.g. Vaibhav" autocomplete="off" required />
+            <small>For name numerology &amp; saving your charts.</small>
+          </label>
+
+          <label>Birthday
+            <input type="date" id="dob" required />
+          </label>
+
+          <label>Time of birth
+            <input type="time" id="tob" step="60" required />
+            <small>Local time where you were born. Don't know it? Use 12:00.</small>
+          </label>
+
+          <label>Where you were born
+            <input list="cityList" id="city" placeholder="Type a city name…" autocomplete="off" />
+            <datalist id="cityList"></datalist>
+            <small>Just pick your city — we handle the coordinates &amp; time zone.</small>
+          </label>
+
+          <button type="button" class="advanced-toggle" id="advToggle" aria-expanded="false" aria-controls="advFields">
+            <span class="adv-label">enter coordinates manually</span><span class="adv-caret">▾</span>
+          </button>
+          <div class="advanced-fields" id="advFields" hidden>
+            <div class="row">
+              <label>Latitude
+                <input type="number" id="lat" step="0.0001" placeholder="e.g. 28.6139" />
+              </label>
+              <label>Longitude
+                <input type="number" id="lon" step="0.0001" placeholder="e.g. 77.2090" />
+              </label>
+            </div>
+            <label>UTC offset (hours)
+              <input type="number" id="tz" step="0.25" placeholder="e.g. 5.5" />
+              <small>Standard time offset. Add +1 if born during daylight saving.</small>
+            </label>
+          </div>
+
+          <button type="submit" id="computeBtn">cast my chart ✦</button>
+          <p class="err" id="formErr" hidden></p>
+        </form>
 
         <div id="peopleCard" class="people-card" data-pane="profile" hidden>
           <div class="aspects-title">Saved people
@@ -424,18 +433,18 @@
       </div>
     </div>
 
-    <script src="theme.js?v6"></script>
+    <script src="theme.js?v7"></script>
     <!-- Shared birth-form plumbing, yoga names, generated rarity table. -->
-    <script src="api.js?v6"></script>
-    <script src="push-client.js?v6"></script>
-    <script src="geocode.js?v6"></script>
-    <script src="birth-cache.js?v6"></script>
-    <script src="domains.js?v6"></script>
-    <script src="share-image.js?v6"></script>
-    <script src="yoga-names.js?v6"></script>
-    <script src="yoga-rarity.js?v6"></script>
-    <script src="app.js?v6"></script>
+    <script src="api.js?v7"></script>
+    <script src="push-client.js?v7"></script>
+    <script src="geocode.js?v7"></script>
+    <script src="birth-cache.js?v7"></script>
+    <script src="domains.js?v7"></script>
+    <script src="share-image.js?v7"></script>
+    <script src="yoga-names.js?v7"></script>
+    <script src="yoga-rarity.js?v7"></script>
+    <script src="app.js?v7"></script>
     <!-- After api.js, so it can tell the web from the native shell. -->
-    <script src="sw-register.js?v6"></script>
+    <script src="sw-register.js?v7"></script>
   </body>
 </html>
