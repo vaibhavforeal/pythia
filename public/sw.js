@@ -25,7 +25,7 @@
 //      failures are swallowed on purpose: a background refresh that fails must
 //      never evict a working cached asset.
 
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = `pythia-shell-${VERSION}`;
 
 // Both HTML entry points plus everything they load. `/app` is the manifest's
@@ -33,7 +33,8 @@ const SHELL = `pythia-shell-${VERSION}`;
 const PRECACHE = [
   "/", "/app",
   "/styles.css",
-  "/theme.js", "/api.js", "/push-client.js", "/geocode.js", "/domains.js",
+  "/theme.js", "/api.js", "/push-client.js", "/geocode.js",
+  "/birth-cache.js", "/domains.js",
   "/share-image.js", "/yoga-names.js", "/yoga-rarity.js", "/app.js",
   "/sw-register.js",
   "/vendor/marked.umd.js", "/vendor/purify.min.js",
