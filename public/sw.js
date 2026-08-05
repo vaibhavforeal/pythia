@@ -28,19 +28,44 @@
 const VERSION = "v6";
 const SHELL = `pythia-shell-${VERSION}`;
 
-// Both HTML entry points plus everything they load. `/app` is the manifest's
-// start_url; `/` is the landing page, from which the install prompt also fires.
-const PRECACHE = [
-  "/", "/app",
+// Assets the HTML requests as `<name>?<VERSION>`, and the reason a release can
+// reach a client that is still running the previous one.
+//
+// A worker cannot replace the page in front of the user on its own: the page is
+// executing the last release's JavaScript, and skipWaiting/claim only decide who
+// answers the NEXT request. So the first load after a deploy used to be served
+// from the outgoing worker's cache — old code, every time — and a release that
+// fixed the update path could not deliver itself.
+//
+// Changing the URL each release sidesteps the whole handshake. Navigations are
+// network-first, so the HTML is always current; the HTML then asks for
+// /app.js?v7, which no previously-cached entry matches, so staleWhileRevalidate
+// falls through to the network on the FIRST load with no cooperation from the
+// old client. Bump VERSION and the queries in app.html and index.html together —
+// sw.test.js fails if they drift.
+//
+// Vendor bundles and images are excluded: they are already content-stable, and
+// re-downloading a 100KB background on every release helps nobody.
+const VERSIONED = [
   "/styles.css",
   "/theme.js", "/api.js", "/push-client.js", "/geocode.js",
   "/birth-cache.js", "/domains.js",
   "/share-image.js", "/yoga-names.js", "/yoga-rarity.js", "/app.js",
-  "/sw-register.js",
+  "/sw-register.js"
+];
+
+// The rest of the shell. `/app` is the manifest's start_url; `/` is the landing
+// page, from which the install prompt also fires. Vendor bundles and images sit
+// here rather than in VERSIONED because they are content-stable — there is no
+// reason to re-download a 100KB background on every release.
+const UNVERSIONED = [
+  "/", "/app",
   "/vendor/marked.umd.js", "/vendor/purify.min.js",
   "/cosmos-bg.webp", "/manifest.json",
   "/icon-192.png", "/icon-512.png", "/favicon.svg", "/apple-touch-icon.png"
 ];
+
+const PRECACHE = UNVERSIONED.concat(VERSIONED.map(url => `${url}?${VERSION}`));
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
