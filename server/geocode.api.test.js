@@ -61,7 +61,9 @@ test("the builtin fallback also answers anonymously", async () => {
   const res = await fetch(`${BASE}/api/geocode?q=Mumbai`);
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.ok(["open-meteo", "builtin"].includes(data.source), `unexpected source: ${data.source}`);
+  // "merged" is the normal case for a curated city, "builtin" when upstream is
+  // unreachable, "open-meteo" for anywhere not in the curated list.
+  assert.ok(["merged", "open-meteo", "builtin"].includes(data.source), `unexpected source: ${data.source}`);
   assert.ok(data.results.length > 0);
 });
 
@@ -69,6 +71,61 @@ test("a too-short query is answered, not rejected", async () => {
   const res = await fetch(`${BASE}/api/geocode?q=a`);
   assert.equal(res.status, 200);
   assert.deepStrictEqual((await res.json()).results, []);
+});
+
+// --- Names people actually type -------------------------------------------
+//
+// The upstream geocoder indexes official names. Half of India's cities were
+// renamed within living memory and most people still type the old spelling, so
+// "Bangalore" returned exactly one result — Bangalore Town, Sindh, Pakistan —
+// and the city of eight million was absent. The builtin list only ran when
+// upstream returned NOTHING, so one wrong hit was enough to suppress it.
+//
+// These do not depend on the network: the builtin matches are merged in and
+// ranked first, so they hold even when open-meteo is unreachable.
+
+const label = r => [r.name, r.admin1, r.country].filter(Boolean).join(", ");
+
+test("the old name and the new name both find the city", async () => {
+  for (const [typed, expect] of [
+    ["Bangalore", /Bengaluru/i],
+    ["Bengaluru", /Bengaluru/i],
+    ["Shimoga", /Shivamogga/i],
+    ["Shivamogga", /Shivamogga/i],
+    ["Bombay", /Mumbai/i],
+    ["Madras", /Chennai/i],
+    ["Calcutta", /Kolkata/i],
+    ["Mysore", /Mysuru/i]
+  ]) {
+    const res = await fetch(`${BASE}/api/geocode?q=${encodeURIComponent(typed)}`);
+    const { results } = await res.json();
+    assert.ok(results.some(r => expect.test(label(r))),
+      `typing "${typed}" must offer ${expect} — got: ${results.map(label).join(" | ") || "nothing"}`);
+  }
+});
+
+test("a curated match outranks a far-away namesake", async () => {
+  // The whole point: someone in Karnataka typing their own city should not have
+  // to scroll past a town in Sindh, or miss it entirely.
+  const res = await fetch(`${BASE}/api/geocode?q=Bangalore`);
+  const { results } = await res.json();
+  assert.match(label(results[0]), /Bengaluru/i,
+    `first suggestion was "${label(results[0])}"`);
+});
+
+test("the label carries both names, so the old one is recognisable", async () => {
+  const res = await fetch(`${BASE}/api/geocode?q=Shimoga`);
+  const { results } = await res.json();
+  const hit = results.find(r => /Shivamogga/i.test(label(r)));
+  assert.match(label(hit), /Shimoga/i,
+    "someone who typed Shimoga needs to see Shimoga in the option they are picking");
+});
+
+test("an alias does not produce a duplicate of the same city", async () => {
+  const res = await fetch(`${BASE}/api/geocode?q=Bengaluru`);
+  const { results } = await res.json();
+  const blr = results.filter(r => /Bengaluru/i.test(label(r)));
+  assert.equal(blr.length, 1, `one entry per city — got ${blr.map(label).join(" | ")}`);
 });
 
 test("opening it up did not open up the rest of the API", async () => {

@@ -1488,9 +1488,15 @@ app.get("/api/geocode", geocodeLimit, async (req, res) => {
       timezone: p.timezone || null,
       tz: p.timezone ? standardOffsetHours(p.timezone) : null
     }));
-    if (results.length) return res.json({ results, source: "open-meteo" });
-    return res.json({ results: fallbackCities(q), source: "builtin" });
+    const curated = fallbackCities(q);
+    const merged = mergeCities(curated, results);
+    return res.json({
+      results: merged,
+      source: curated.length && results.length ? "merged" : curated.length ? "builtin" : "open-meteo"
+    });
   } catch (err) {
+    // Upstream down or slow: the curated list is all we have, and it is exactly
+    // when the network is worst that a birth place still needs entering.
     console.error("geocode error:", err.message);
     res.json({ results: fallbackCities(q), source: "builtin" });
   }
@@ -1774,11 +1780,52 @@ function standardOffsetHours(timeZone) {
   const jul = offsetHoursAt(timeZone, new Date(Date.UTC(y, 6, 1, 12)));
   return Math.round(Math.min(jan, jul) * 100) / 100; // standard = the smaller (winter) offset
 }
+/**
+ * Curated matches, by official name or by the spelling people actually type.
+ *
+ * When the match came from an alias the label carries both — someone who typed
+ * "Shimoga" needs to see Shimoga in the option they are picking, or they cannot
+ * tell that "Shivamogga, India" is the place they meant.
+ */
 function fallbackCities(q) {
-  const needle = q.toLowerCase();
-  return CITIES.filter(c => c.name.toLowerCase().includes(needle))
-    .slice(0, 8)
-    .map(c => ({ name: c.name, admin1: "", country: "", lat: c.lat, lon: c.lon, timezone: null, tz: c.tz }));
+  const needle = q.toLowerCase().trim();
+  if (!needle) return [];
+  const out = [];
+  for (const c of CITIES) {
+    const byName = c.name.toLowerCase().includes(needle);
+    const alias = byName ? null : (c.aka || []).find(a => a.toLowerCase().includes(needle));
+    if (!byName && !alias) continue;
+    // "Shivamogga, India" + "Shimoga" -> "Shivamogga (Shimoga), India"
+    const name = alias ? c.name.replace(/^([^,]+)/, `$1 (${alias})`) : c.name;
+    out.push({ name, admin1: "", country: "", lat: c.lat, lon: c.lon, timezone: null, tz: c.tz });
+    if (out.length === 8) break;
+  }
+  return out;
+}
+
+/**
+ * Curated first, then whatever the upstream geocoder found.
+ *
+ * The builtin list used to be a fallback for when upstream returned nothing,
+ * which meant a single bad hit suppressed it: "Bangalore" matched a town in
+ * Sindh, so the city of eight million never appeared. Merging instead of
+ * replacing puts the curated answer first for the places this app's users
+ * actually come from, while upstream still covers the rest of the world.
+ *
+ * Deduped on rough coordinates rather than on name, because the two sources
+ * disagree about names by definition — that disagreement is the whole reason
+ * the curated list exists.
+ */
+function mergeCities(curated, upstream) {
+  const out = [];
+  const seen = [];
+  for (const r of [...curated, ...upstream]) {
+    if (seen.some(s => Math.abs(s.lat - r.lat) < 0.15 && Math.abs(s.lon - r.lon) < 0.15)) continue;
+    seen.push(r);
+    out.push(r);
+    if (out.length === 8) break;
+  }
+  return out;
 }
 
 // A validation failure that maps to an HTTP status instead of a 500.
