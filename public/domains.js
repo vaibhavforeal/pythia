@@ -1,29 +1,52 @@
-// Situation reads: the structural spine behind "where should my energy go".
+// Situation cards: the structural spine behind "where should my energy go".
 //
 // The point of this file is that the frame arrives BEFORE the user speaks. Ask
 // a general-purpose chatbot "am I overreacting about my friend?" and it mirrors
 // your framing back, which is why those conversations loop. Here the chart
-// supplies a fixed frame the answer has to fit: which house governs the domain,
-// who rules it, where that ruler sits, and what the running dasha wants.
+// supplies a fixed frame the answer has to fit.
 //
-// Everything here is computed from the chart the client already holds — no
-// round trip, no model call. The model only writes the four slots afterwards,
-// grounded in this.
+// The reasoning itself lives server-side in synthesis.js and arrives on the
+// chart as `c.synthesis`. This file is the renderer: it owns the copy, and it
+// owns the rule about how much of the reasoning is allowed onto a card.
+//
+// That rule is the important part. A card prints the promise, then AT MOST ONE
+// more thing. Everything else is still computed and still goes to the model —
+// it is simply not shown. Stacking every factor into one line is what made
+// these cards read as noise.
 
-const SIGN_LORDS = [
-  "Mars", "Venus", "Mercury", "Moon", "Sun", "Mercury",
-  "Venus", "Mars", "Jupiter", "Saturn", "Saturn", "Jupiter"
-];
-
-// What it means for a house to be where your domain's ruler ended up.
-const HOUSE_MEANING = {
-  1: "yourself", 2: "what you hold onto", 3: "your own effort", 4: "home and comfort",
-  5: "play and creativity", 6: "conflict and grind", 7: "other people", 8: "upheaval and depth",
-  9: "belief and mentors", 10: "work and status", 11: "your circle and gains", 12: "retreat and letting go"
+// Copy only. The structural half — house, supporting house, which varga
+// governs the area — lives in server/synthesis.js as DOMAIN_SPEC, and the two
+// key sets are asserted equal in the tests.
+const DOMAINS = {
+  friendships: {
+    emoji: "☍", kicker: "friendships", head: "your circle",
+    houseLabel: "friend circles and what you gain from them",
+    ask: "Who deserves my energy in my friendships right now, and what am I over-giving to?"
+  },
+  situationships: {
+    emoji: "♡", kicker: "situationships", head: "the one you're unsure about",
+    houseLabel: "partnership, and how you meet people one to one",
+    ask: "Where do I actually stand in this situationship, and what am I holding onto that isn't mine to carry?"
+  },
+  home: {
+    emoji: "⌂", kicker: "parents & home", head: "the house you grew up in",
+    houseLabel: "home, mother, and what safety feels like to you",
+    ask: "How do I deal with the pressure at home without carrying all of it, and what's actually mine to hold?"
+  },
+  focus: {
+    emoji: "✎", kicker: "studies & focus", head: "your attention",
+    houseLabel: "intellect, study and what you can actually concentrate on",
+    ask: "Where should my focus go this term, and what am I burning attention on that isn't paying me back?"
+  },
+  career: {
+    emoji: "◈", kicker: "work & direction", head: "what you're building",
+    houseLabel: "work, status, and what you get known for",
+    ask: "What should I actually be building right now, and what am I doing because it looks right?"
+  }
 };
 
-// Plain-language gloss for a ruler landing in each house — written as "where
-// the energy actually goes", since that's the question being asked.
+// What it means for a ruler to land in each house — written as "where the
+// energy actually goes", since that is the question being asked.
 const LORD_IN_HOUSE = {
   1: "it comes back to you — you are the one setting the terms here",
   2: "you invest in keeping things, which can tip into holding on too long",
@@ -39,117 +62,51 @@ const LORD_IN_HOUSE = {
   12: "it drains quietly, often to people or things you can't fully see"
 };
 
-const DOMAINS = {
-  friendships: {
-    emoji: "☍", kicker: "friendships", head: "your circle",
-    house: 11, second: 3,
-    houseLabel: "friend circles and what you gain from them",
-    ask: "Who deserves my energy in my friendships right now, and what am I over-giving to?"
-  },
-  situationships: {
-    emoji: "♡", kicker: "situationships", head: "the one you're unsure about",
-    house: 7, second: 5,
-    houseLabel: "partnership, and how you meet people one to one",
-    ask: "Where do I actually stand in this situationship, and what am I holding onto that isn't mine to carry?"
-  },
-  home: {
-    emoji: "⌂", kicker: "parents & home", head: "the house you grew up in",
-    house: 4, second: 9,
-    houseLabel: "home, mother, and what safety feels like to you",
-    ask: "How do I deal with the pressure at home without carrying all of it, and what's actually mine to hold?"
-  },
-  focus: {
-    emoji: "✎", kicker: "studies & focus", head: "your attention",
-    house: 5, second: 10,
-    houseLabel: "intellect, study and what you can actually concentrate on",
-    ask: "Where should my focus go this term, and what am I burning attention on that isn't paying me back?"
-  }
+const HOUSE_MEANING = {
+  1: "yourself", 2: "what you hold onto", 3: "your own effort", 4: "home and comfort",
+  5: "play and creativity", 6: "conflict and grind", 7: "other people", 8: "upheaval and depth",
+  9: "belief and mentors", 10: "work and status", 11: "your circle and gains", 12: "retreat and letting go"
 };
 
-/** Whole-sign: the sign on the nth house from the ascendant. */
-function houseSignIndex(chart, n) {
-  const asc = chart && chart.ascendant && chart.ascendant.signIndex;
-  if (!Number.isInteger(asc)) return null;
-  return (((asc + n - 1) % 12) + 12) % 12;
-}
+// What each varga is FOR, in the card's own voice — when it actually governs
+// the topic. The navamsa IS the partnership chart, so situationships must not
+// hear it described as a generic strength grade.
+const VARGA_VOICE = {
+  D9: "the partnership chart", D4: "the home chart",
+  D10: "the career chart", D24: "the learning chart"
+};
 
 /**
- * The structural read for one domain. Deliberately returns facts, not verdicts
- * — a chart describes conditions and timing, never how something turns out.
+ * The other reading of a varga: role "strength" means it is only borrowed as a
+ * general strength grade, not as the chart that owns the topic. Only
+ * friendships does this — see vargaRole in server/synthesis.js — and calling D9
+ * "the partnership chart" on a card about your circle would be wrong.
+ */
+function vargaVoice(sustain) {
+  if (!sustain) return "the divisional chart";
+  if (sustain.role === "strength") return "the strength chart";
+  return VARGA_VOICE[sustain.varga] || "the divisional chart";
+}
+
+const VERDICT_PHRASE = {
+  "looks-better-than-it-holds": "this looks better than it holds",
+  "grows-into-it": "this one you grow into",
+  "holds": "this holds",
+  "needs-building": "this one needs building"
+};
+
+/**
+ * Merge the precomputed synthesis with the copy. Falls back to a copy-only
+ * object when the chart predates the synthesis field — old saved chats are
+ * backfilled server-side, but a stale payload must not break the profile.
  */
 function domainRead(chart, key) {
   const d = DOMAINS[key];
-  if (!d || !chart || !chart.planets) return null;
-
-  const signIdx = houseSignIndex(chart, d.house);
-  if (signIdx === null) return null;
-
-  const lordKey = SIGN_LORDS[signIdx];
-  const lord = chart.planets.find(p => p.key === lordKey) || null;
-  const occupants = chart.planets.filter(p => p.house === d.house && p.key !== "Ketu");
-  const secondOccupants = chart.planets.filter(p => p.house === d.second);
-
-  const maha = (chart.dasha && chart.dasha.maha && chart.dasha.maha.lord) || null;
-  const antar = (chart.dasha && chart.dasha.antar && chart.dasha.antar.lord) || null;
-
-  // Does the era actually touch this part of life? Three ways it can: it rules
-  // the house, it sits in the house, or it's the ruler itself.
-  const eraTouches =
-    maha === lordKey ? "rules it" :
-    (chart.planets.find(p => p.key === maha) || {}).house === d.house ? "sits in it" :
-    occupants.some(p => p.key === maha) ? "sits in it" : null;
-
-  return {
-    key,
-    ...d,
-    sign: SIGNS_EN[signIdx] || "",
-    signIndex: signIdx,
-    lordKey,
-    lordHouse: lord ? lord.house : null,
-    lordSign: lord ? lord.sign : null,
-    lordRetro: !!(lord && lord.retro),
-    occupants: occupants.map(p => p.key),
-    secondOccupants: secondOccupants.map(p => p.key),
-    maha,
-    antar,
-    eraTouches
-  };
-}
-
-const SIGNS_EN = [
-  "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-  "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
-];
-
-/** One honest sentence about where this domain's energy goes. */
-function domainLine(read) {
-  if (!read) return "";
-  const where = LORD_IN_HOUSE[read.lordHouse];
-  const bits = [];
-  if (where) bits.push(`Your ${ord(read.house)} — ${read.houseLabel} — is ruled by ${read.lordKey}, sitting in your ${ord(read.lordHouse)}, so ${where}.`);
-  if (read.occupants.length) {
-    bits.push(`${andList(read.occupants)} ${read.occupants.length > 1 ? "sit" : "sits"} right in it, which makes this area loud for you.`);
-  }
-  if (read.eraTouches) {
-    bits.push(`And your ${read.maha} era ${read.eraTouches} — this is genuinely live for you right now, not background noise.`);
-  }
-  return bits.join(" ");
-}
-
-/**
- * Compact context handed to the model, so its four slots are grounded in the
- * same structure the card already showed rather than invented alongside it.
- */
-function domainContext(read) {
-  if (!read) return "";
-  return [
-    `Domain: ${read.kicker}.`,
-    `Governing house: ${read.house}th (${read.houseLabel}), sign ${read.sign}, ruled by ${read.lordKey}.`,
-    `That ruler sits in the ${ord(read.lordHouse)} house (${HOUSE_MEANING[read.lordHouse] || "?"})${read.lordRetro ? ", retrograde" : ""}.`,
-    read.occupants.length ? `Planets in the ${ord(read.house)}: ${read.occupants.join(", ")}.` : `No planets in the ${ord(read.house)}.`,
-    read.secondOccupants.length ? `Supporting ${ord(read.second)} house holds: ${read.secondOccupants.join(", ")}.` : "",
-    `Running era: ${read.maha} Mahadasha${read.antar ? ` / ${read.antar} Antardasha` : ""}${read.eraTouches ? ` — the era ${read.eraTouches} this house` : ""}.`
-  ].filter(Boolean).join(" ");
+  if (!d) return null;
+  const syn = chart && chart.synthesis && chart.synthesis.domains && chart.synthesis.domains[key];
+  const lagnaLord = (chart && chart.synthesis && chart.synthesis.lagnaLord) || null;
+  if (!syn) return { key, ...d, stale: true };
+  return { key, ...d, ...syn, lagnaLord };
 }
 
 function ord(n) {
@@ -161,6 +118,140 @@ function ord(n) {
 function andList(items) {
   if (items.length <= 1) return items.join("");
   return items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
+
+/** Slot 1: the promise, in one sentence, carrying the lord's dignity. */
+function promiseSentence(read) {
+  const gloss = LORD_IN_HOUSE[read.promise.house] || "";
+  const dig = read.promise.dignity;
+  const flavour =
+    dig === "own" ? ", in its own sign" :
+    dig === "exalted" ? ", exalted" :
+    dig === "debilitated" ? ", and struggling there" : "";
+  return `Your ${ord(read.house)} — ${read.houseLabel} — is ruled by ${read.lordKey}, ` +
+    `sitting in your ${ord(read.promise.house)}${flavour}, so ${gloss}.`;
+}
+
+/** Slot 2: at most one more thing, chosen server-side. */
+function secondSentence(read) {
+  const su = read.sustain;
+  switch (read.slot2) {
+    case "divergence": {
+      const dir = read.verdict === "looks-better-than-it-holds" ? "falls" : "picks up";
+      return `In the ${su.varga}, ${vargaVoice(su)}, ` +
+        `that same ${read.lordKey} ${dir} — ${VERDICT_PHRASE[read.verdict]}.`;
+    }
+    case "loud": {
+      if (read.loudWhere === "house") {
+        // A lord sitting in the house it rules is itself an occupant, and slot 1
+        // has already named it. Printing it again spends the whole second slot
+        // restating the first. Safe by construction: this arm only fires on 2+
+        // occupants, so dropping one always leaves at least one name.
+        const others = read.loudSet.filter(k => k !== read.lordKey);
+        return `${andList(others)} ${others.length > 1 ? "sit" : "sits"} right in the ${ord(read.house)}, ` +
+          `which makes this area loud for you.`;
+      } else {
+        return `${andList(read.loudSet)} ${read.loudSet.length > 1 ? "sit" : "sits"} alongside ${read.lordKey}, ` +
+          `which makes this area loud for you.`;
+      }
+    }
+    case "agreement":
+      return `The ${su.varga} says the same thing — ${VERDICT_PHRASE[read.verdict]}.`;
+    case "shade":
+      return `Your ${read.maha} era ${read.eraTouches}, so it's live right now.`;
+    default:
+      return "";
+  }
+}
+
+/** One or two sentences. Never three. Plain text. */
+function domainLine(read) {
+  if (!read) return "";
+  if (read.stale) return `Your ${read.houseLabel} — open this one up to see where the energy goes.`;
+  return [promiseSentence(read), secondSentence(read)].filter(Boolean).join(" ");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/**
+ * The same line, escaped, with the verdict phrase emphasised.
+ *
+ * Everything here is server-computed from a fixed vocabulary, so there is no
+ * live injection vector — but the card is rendered with innerHTML, and an
+ * unescaped path through it is the kind of thing that stops being safe the
+ * first time someone puts a person's name into a domain line. Escape the
+ * fragments, then add the one tag we actually want.
+ */
+function domainLineHtml(read) {
+  if (!read) return "";
+  if (read.stale) return esc(domainLine(read));
+  const parts = [esc(promiseSentence(read))];
+  const second = secondSentence(read);
+  if (read.slot2 === "divergence" && second) {
+    const phrase = VERDICT_PHRASE[read.verdict];
+    const [before] = second.split(phrase);
+    parts.push(`${esc(before)}<b>${esc(phrase)}</b>.`);
+  } else if (second) {
+    parts.push(esc(second));
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The tiered block handed to the model. The labels and the closing RULE line
+ * are the whole point: a flat list of facts gives the model no way to know
+ * that the house lord's condition outranks the running dasha.
+ */
+function domainContext(read) {
+  if (!read) return "";
+  if (read.stale) {
+    return `STALE — Domain: ${read.kicker}. The birth chart data is missing or predates this analysis. ` +
+      `No structural read is available. Ground the answer in what the person tells you, ` +
+      `not in chart placements, houses, or timing. Ask clarifying questions rather than ` +
+      `inventing a chart structure from their description.`;
+  }
+  const L = [];
+  const l = read.lagnaLord;
+  if (l) {
+    L.push(
+      `BASELINE — Lagna lord ${l.key} in the ${ord(l.house)}, ${l.dignity}` +
+        `${l.combust ? ", combust" : ""}: ${l.band}. ` +
+        `This is how much they can act on what follows.`
+    );
+  }
+  L.push(
+    `PROMISE (D1) — ${ord(read.house)} house (${read.houseLabel}), sign ${read.sign}, ` +
+      `ruled by ${read.lordKey}, in the ${ord(read.promise.house)} house ` +
+      `(${HOUSE_MEANING[read.promise.house]}), ${read.promise.dignity}` +
+      `${read.promise.retro ? ", retrograde" : ""}: ${read.promise.band}. ` +
+      (read.occupants.length ? `In the house: ${read.occupants.join(", ")}. ` : "No planets in the house. ") +
+      (read.secondOccupants.length ? `Supporting ${ord(read.second)} holds: ${read.secondOccupants.join(", ")}.` : "")
+  );
+  if (read.sustain) {
+    const role = read.sustain.role === "strength"
+      ? " — used here as a general strength grade, not as a chart that governs this topic"
+      : "";
+    L.push(
+      `SUSTAIN (${read.sustain.varga} ${read.sustain.vargaName}${role}) — that same ` +
+        `${read.lordKey} is ${read.sustain.dignity} in the ${ord(read.sustain.house)} house ` +
+        `of that chart${read.sustain.vargottama ? ", vargottama" : ""}: ${read.sustain.band}.`
+    );
+    L.push(`VERDICT — ${VERDICT_PHRASE[read.verdict]}.`);
+  }
+  L.push(
+    `SHADE — ${read.maha} Mahadasha${read.antar ? ` / ${read.antar} Antardasha` : ""}. ` +
+      (read.eraTouches
+        ? `The era lord ${read.eraTouches}, so this area is live.`
+        : `The era lord neither rules nor occupies this house, so this period is not primarily about this area.`)
+  );
+  L.push(
+    "RULE — PROMISE outranks SUSTAIN outranks SHADE. Never let the running dasha " +
+      "override the structural read. The dasha says when, never whether."
+  );
+  return L.join("\n");
 }
 
 // The fixed shape every situation answer takes. Four slots force a decision;
@@ -178,5 +269,7 @@ const FOUR_SLOTS =
   "no preamble, no disclaimers.";
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { DOMAINS, domainRead, domainLine, domainContext, FOUR_SLOTS, SIGN_LORDS, HOUSE_MEANING };
+  module.exports = {
+    DOMAINS, domainRead, domainLine, domainLineHtml, domainContext, FOUR_SLOTS, HOUSE_MEANING
+  };
 }

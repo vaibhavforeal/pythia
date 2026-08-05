@@ -10,6 +10,7 @@ const { computeDivisionals } = require("./vargas");
 const { computeTransits, computeSadeSati } = require("./transits");
 const { computeAshtakavarga } = require("./ashtakavarga");
 const { detectYogas, yogasToText } = require("./yogas");
+const { computeSynthesis } = require("./synthesis");
 
 const PLANET_ABBR = {
   Sun: "Su", Moon: "Mo", Mars: "Ma", Mercury: "Me", Jupiter: "Ju",
@@ -232,6 +233,10 @@ function computeChart(input) {
   const moon = planets.find(p => p.key === "Moon");
   const dasha = computeDasha(moon.lon, { year, month, day, hour, minute, tz });
 
+  // Synthesis reads the rashi, the navamsa, the divisionals and the dasha, so
+  // it has to run after all four exist.
+  const synthesis = computeSynthesis({ ascendant, planets, navamsa, divisionals, dasha });
+
   const nowMs = Date.now();
   const transits = computeTransits(moon.signIndex, ascSign, nowMs);
   const sadeSati = computeSadeSati(moon.signIndex, nowMs);
@@ -257,6 +262,7 @@ function computeChart(input) {
     ashtakavarga,
     yogas,
     dasha,
+    synthesis,
     transits,
     sadeSati
   };
@@ -271,6 +277,16 @@ function chartToText(c) {
       `lord ${c.ascendant.signLord}, nakshatra ${c.ascendant.nakshatra} pada ${c.ascendant.pada}`
   );
   L.push(`Ayanamsa (${c.ayanamsaSystem}): ${c.ayanamsa}°`);
+
+  if (c.synthesis && c.synthesis.lagnaLord) {
+    const l = c.synthesis.lagnaLord;
+    L.push(
+      `Lagna lord condition: ${l.key} in the ${ord(l.house)} house, ${l.dignity}` +
+        `${l.combust ? ", combust" : ""} — ${l.band.toUpperCase()}. ` +
+        `This is the baseline for how much the native can act on anything below.`
+    );
+  }
+
   L.push("");
   L.push("Planetary positions (sidereal, whole-sign houses):");
   for (const p of c.planets) {
@@ -333,9 +349,36 @@ function chartToText(c) {
     }
   }
 
+  if (c.synthesis && c.synthesis.domains) {
+    L.push("");
+    L.push("=== PRIMARY VARGAS — the divisional chart that governs each life area ===");
+    L.push(
+      "Read these in order: the RASHI states the promise, the varga states whether it " +
+        "sustains, and only then does the dasha say whether it is live. A varga grades " +
+        "the rashi; it never replaces it."
+    );
+    for (const [key, dom] of Object.entries(c.synthesis.domains)) {
+      if (!dom.sustain) continue;
+      const role = dom.sustain.role === "strength" ? " (general strength grade, not a topic chart)" : "";
+      L.push(
+        `- ${key} — ${ord(dom.house)} house, ruled by ${dom.lordKey}. ` +
+          `RASHI: ${dom.promise.dignity}, ${ord(dom.promise.house)} house — ${dom.promise.band}. ` +
+          `${dom.sustain.varga} ${dom.sustain.vargaName}${role}: ${dom.sustain.dignity}, ` +
+          `${ord(dom.sustain.house)} house — ${dom.sustain.band}. ` +
+          `VERDICT: ${dom.verdict.replace(/-/g, " ")}.`
+      );
+    }
+  }
+
   if (c.divisionals && c.divisionals.length) {
     L.push("");
-    L.push("=== Divisional charts (vargas) — each planet's sign/house per division ===");
+    L.push(
+      "=== Divisional charts (vargas) — supplementary reference only ==="
+    );
+    L.push(
+      "The primary vargas for synthesis are listed above. Everything below is " +
+        "background detail and must not outweigh the rashi or the primary vargas."
+    );
     for (const v of c.divisionals) {
       const pl = v.planets
         .map(p => `${PLANET_ABBR[p.key] || p.key} ${p.sign.slice(0, 3)}/${p.house}`)
