@@ -12,11 +12,38 @@
   const native = !!(window.PythiaAuth && window.PythiaAuth.native);
 
   if (!native && "serviceWorker" in navigator) {
+    // Was a worker already serving this page when it loaded? A controllerchange
+    // with no prior controller is the first install taking over, and nothing on
+    // screen is stale then — reloading would cost every new visitor a round trip
+    // for nothing.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+
+    // sw.js calls skipWaiting() and clients.claim(), so a new worker starts
+    // serving straight away. But claim() only changes who answers the NEXT
+    // request; the page in front of the user is still running the JavaScript it
+    // loaded before any of that happened. Without this reload, a PWA that is
+    // backgrounded and resumed rather than freshly navigated keeps a stale shell
+    // indefinitely — a shipped release simply never arrives.
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloading) return;
+      reloading = true; // a reload loop is a worse failure than a stale shell
+      location.reload();
+    });
+
     // After load: registration competes with the app's first API calls for
     // connections otherwise, and the worker is a repeat-visit optimisation —
     // it has nothing to contribute to the load that registers it.
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(err => {
+      navigator.serviceWorker.register("/sw.js").then(reg => {
+        // The browser checks sw.js on navigation, and an installed PWA that is
+        // resumed from the background may not navigate for days. Asking on
+        // foreground is what makes a release land in hours rather than whenever
+        // the user happens to cold-start the app.
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update().catch(() => {});
+        });
+      }).catch(err => {
         // Not fatal in any way: no worker simply means no offline and no install
         // prompt. Never let it break the page.
         console.warn("service worker registration failed:", err);
