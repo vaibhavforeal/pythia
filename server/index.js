@@ -379,7 +379,13 @@ app.use("/api", (req, res, next) => {
 // individually rate limited and never return the inviter's birth details.
 // /api/cron/* has no user, so it can't pass the session gate — it authenticates
 // with a shared secret in its own handler instead.
-const PUBLIC_API = /^\/(auth|invite|cron)\//;
+// /api/geocode is public for the same reason as /api/invite/*: someone who
+// opens an invite link has no account, and city search is how they locate their
+// own birthplace. Behind the gate it returned 401, and the client reads
+// `data.results || []` off the response — so the datalist silently stayed empty
+// and the invite flow dead-ended at the city box. It is a read-only proxy that
+// returns nothing user-specific, and it carries its own per-IP limiter below.
+const PUBLIC_API = /^\/(auth|invite|cron)\/|^\/geocode$/;
 app.use("/api", auth.checkOrigin, (req, res, next) => {
   if (PUBLIC_API.test(req.path)) return next();
   return auth.requireAuth(req, res, next);
@@ -1452,7 +1458,18 @@ app.delete("/api/conversations/:id", async (req, res) => {
 // --- Geocoding (live city search → lat/lon + standard UTC offset) -----------
 // Uses the free Open-Meteo geocoding API (no key). Falls back to the built-in
 // gazetteer when the network is unavailable, so the picker still works offline.
-app.get("/api/geocode", async (req, res) => {
+// Public, so it needs its own ceiling: this proxies an external geocoder, and
+// an open proxy burns someone else's quota as readily as ours. Sized for
+// typeahead rather than for logins — auth.rateLimit's 12-per-15-minutes would
+// be spent on a single city name, since the box fires roughly one request per
+// 250ms of typing. Same shape and numbers as inviteViewLimit.
+const geocodeLimit = auth.rateLimiter({
+  windowMs: 60 * 1000, max: 60,
+  key: req => auth.clientIp(req),
+  message: "Too many city searches — give it a minute."
+});
+
+app.get("/api/geocode", geocodeLimit, async (req, res) => {
   const q = String(req.query.q || "").trim();
   if (q.length < 2) return res.json({ results: [] });
   try {
