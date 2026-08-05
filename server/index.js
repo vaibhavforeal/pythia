@@ -1456,8 +1456,10 @@ app.delete("/api/conversations/:id", async (req, res) => {
 });
 
 // --- Geocoding (live city search → lat/lon + standard UTC offset) -----------
-// Uses the free Open-Meteo geocoding API (no key). Falls back to the built-in
-// gazetteer when the network is unavailable, so the picker still works offline.
+// Uses the free Open-Meteo geocoding API (no key), MERGED with the built-in
+// gazetteer rather than falling back to it. Open-Meteo indexes official names
+// only, so the curated list is what makes "Bangalore" and "Shimoga" findable at
+// all — and it stands alone when the network is down.
 // Public, so it needs its own ceiling: this proxies an external geocoder, and
 // an open proxy burns someone else's quota as readily as ours. Sized for
 // typeahead rather than for logins — auth.rateLimit's 12-per-15-minutes would
@@ -1474,7 +1476,7 @@ app.get("/api/geocode", geocodeLimit, async (req, res) => {
   if (q.length < 2) return res.json({ results: [] });
   try {
     const url =
-      "https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=" +
+      `https://geocoding-api.open-meteo.com/v1/search?count=${MAX_CITY_RESULTS}&language=en&format=json&name=` +
       encodeURIComponent(q);
     const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (!r.ok) throw new Error(`geocoder HTTP ${r.status}`);
@@ -1488,17 +1490,17 @@ app.get("/api/geocode", geocodeLimit, async (req, res) => {
       timezone: p.timezone || null,
       tz: p.timezone ? standardOffsetHours(p.timezone) : null
     }));
-    const curated = fallbackCities(q);
-    const merged = mergeCities(curated, results);
-    return res.json({
-      results: merged,
-      source: curated.length && results.length ? "merged" : curated.length ? "builtin" : "open-meteo"
-    });
+    // Derived from what actually survived the merge, not from its inputs — this
+    // field is the only signal of which path ran, so it has to be right exactly
+    // when someone is debugging the merge.
+    const { results: merged, fromCurated, fromUpstream } = mergeCities(curatedMatches(q), results);
+    const source = fromCurated && fromUpstream ? "merged" : fromUpstream ? "open-meteo" : "builtin";
+    return res.json({ results: merged, source });
   } catch (err) {
     // Upstream down or slow: the curated list is all we have, and it is exactly
     // when the network is worst that a birth place still needs entering.
     console.error("geocode error:", err.message);
-    res.json({ results: fallbackCities(q), source: "builtin" });
+    res.json({ results: curatedMatches(q).map(curatedRow), source: "builtin" });
   }
 });
 
@@ -1780,52 +1782,100 @@ function standardOffsetHours(timeZone) {
   const jul = offsetHoursAt(timeZone, new Date(Date.UTC(y, 6, 1, 12)));
   return Math.round(Math.min(jan, jul) * 100) / 100; // standard = the smaller (winter) offset
 }
+const MAX_CITY_RESULTS = 8;
+// How many curated places the geocoder did NOT return may appear. The curated
+// list exists to make places findable, not to answer the query on its own — and
+// a curated block as large as the response can hide every real result behind it.
+const CURATED_ORPHAN_QUOTA = 3;
+// Two rows this close are the same place described by two gazetteers. Well under
+// the ~30km between Gurugram and New Delhi, which must stay distinct.
+const SAME_PLACE_KM = 12;
+
+/** Rough great-circle distance. Exact enough to tell "same city" from "not". */
+function kmApart(a, b) {
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lon - a.lon) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
+  return Math.hypot(dLat, dLon) * R;
+}
+
 /**
- * Curated matches, by official name or by the spelling people actually type.
+ * Does any word in `text` begin with `needle`?
  *
- * When the match came from an alias the label carries both — someone who typed
- * "Shimoga" needs to see Shimoga in the option they are picking, or they cannot
- * tell that "Shivamogga, India" is the place they meant.
+ * Prefix-per-word rather than substring, because the bracketed alias is a
+ * promise about what the user typed: substring matching let "lore" render
+ * "Bengaluru (Bangalore)", claiming a spelling nobody entered.
  */
-function fallbackCities(q) {
-  const needle = q.toLowerCase().trim();
-  if (!needle) return [];
+function matchesTerm(text, needle) {
+  return String(text).toLowerCase().split(/[^a-z0-9]+/).some(w => w && w.startsWith(needle));
+}
+
+/** Curated places matching the query, by city name or by a spelling people type. */
+function curatedMatches(q) {
+  const needle = q.toLowerCase();
   const out = [];
   for (const c of CITIES) {
-    const byName = c.name.toLowerCase().includes(needle);
-    const alias = byName ? null : (c.aka || []).find(a => a.toLowerCase().includes(needle));
-    if (!byName && !alias) continue;
-    // "Shivamogga, India" + "Shimoga" -> "Shivamogga (Shimoga), India"
-    const name = alias ? c.name.replace(/^([^,]+)/, `$1 (${alias})`) : c.name;
-    out.push({ name, admin1: "", country: "", lat: c.lat, lon: c.lon, timezone: null, tz: c.tz });
-    if (out.length === 8) break;
+    const byCity = matchesTerm(c.city, needle);
+    const alias = byCity ? null : c.aka.find(a => matchesTerm(a, needle));
+    if (byCity || alias) out.push({ ...c, alias });
+    if (out.length === MAX_CITY_RESULTS) break;
   }
   return out;
 }
 
+/** A curated place as an API result, for when upstream doesn't know it. */
+function curatedRow(c) {
+  return {
+    name: c.alias ? `${c.city} (${c.alias})` : c.city,
+    admin1: "", country: c.country,
+    lat: c.lat, lon: c.lon, timezone: null, tz: c.tz
+  };
+}
+
 /**
- * Curated first, then whatever the upstream geocoder found.
+ * Curated places first, then everything else upstream found.
  *
- * The builtin list used to be a fallback for when upstream returned nothing,
- * which meant a single bad hit suppressed it: "Bangalore" matched a town in
- * Sindh, so the city of eight million never appeared. Merging instead of
- * replacing puts the curated answer first for the places this app's users
- * actually come from, while upstream still covers the rest of the world.
+ * A curated entry PROMOTES its upstream twin rather than replacing it: upstream
+ * carries the state and the IANA zone, which is exactly what tells a user which
+ * Kochi they are looking at, while the curated list contributes the ranking and
+ * the alias. Replacing it stripped "Kerala" from the answer.
  *
- * Deduped on rough coordinates rather than on name, because the two sources
- * disagree about names by definition — that disagreement is the whole reason
- * the curated list exists.
+ * Only curated rows are matched against upstream. Upstream rows are never
+ * compared with each other — two same-named villages a few km apart are both
+ * real, and dropping one silently moves somebody's birthplace.
+ *
+ * A twin has to agree on BOTH name and position. Proximity alone promoted
+ * "Mysore Airport" — 10km from the centre, and the only nearby thing upstream
+ * returned for that query — leaving the label reading "Mysore Airport (Mysore)"
+ * where the city should have been.
  */
+function sameCity(upstreamRow, c) {
+  const n = String(upstreamRow.name).toLowerCase();
+  return n === c.city.toLowerCase() || c.aka.some(a => a.toLowerCase() === n);
+}
+
 function mergeCities(curated, upstream) {
-  const out = [];
-  const seen = [];
-  for (const r of [...curated, ...upstream]) {
-    if (seen.some(s => Math.abs(s.lat - r.lat) < 0.15 && Math.abs(s.lon - r.lon) < 0.15)) continue;
-    seen.push(r);
-    out.push(r);
-    if (out.length === 8) break;
+  const rest = [...upstream];
+  const head = [];
+  let orphans = CURATED_ORPHAN_QUOTA;
+
+  for (const c of curated) {
+    const i = rest.findIndex(u => sameCity(u, c) && kmApart(u, c) <= SAME_PLACE_KM);
+    if (i !== -1) {
+      const [u] = rest.splice(i, 1);
+      head.push(c.alias ? { ...u, name: `${u.name} (${c.alias})` } : u);
+    } else if (orphans > 0) {
+      orphans--;
+      head.push(curatedRow(c));
+    }
+    if (head.length === MAX_CITY_RESULTS) break;
   }
-  return out;
+
+  return {
+    results: [...head, ...rest].slice(0, MAX_CITY_RESULTS),
+    fromCurated: head.length,
+    fromUpstream: Math.min(rest.length, Math.max(0, MAX_CITY_RESULTS - head.length))
+  };
 }
 
 // A validation failure that maps to an HTTP status instead of a 500.

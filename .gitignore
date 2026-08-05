@@ -26,3 +26,13 @@ serviceAccountKey*.json
 *.mp4
 *.webm
 WhatsApp Video*
+
+# Browser-automation scratch: Playwright's snapshot/console dumps and the
+# screenshots taken while verifying UI changes. Artifacts of checking the work,
+# not the work.
+.playwright-mcp/
+*.png
+!logo.png
+!astroman_logo.png
+!public/**/*.png
+!mobile/**/*.png

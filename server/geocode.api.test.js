@@ -81,8 +81,11 @@ test("a too-short query is answered, not rejected", async () => {
 // and the city of eight million was absent. The builtin list only ran when
 // upstream returned NOTHING, so one wrong hit was enough to suppress it.
 //
-// These do not depend on the network: the builtin matches are merged in and
-// ranked first, so they hold even when open-meteo is unreachable.
+// The alias tests below do not depend on the network — curated matches are
+// merged in and ranked first, so they hold when open-meteo is unreachable. The
+// dedup and crowd-out tests further down DO read upstream, since collapsing two
+// sources is the behaviour under test; they skip themselves if it is
+// unreachable rather than failing on someone else's outage.
 
 const label = r => [r.name, r.admin1, r.country].filter(Boolean).join(", ");
 
@@ -109,6 +112,9 @@ test("a curated match outranks a far-away namesake", async () => {
   // to scroll past a town in Sindh, or miss it entirely.
   const res = await fetch(`${BASE}/api/geocode?q=Bangalore`);
   const { results } = await res.json();
+  // Guarded: an empty list is exactly what a regression here produces, and
+  // indexing into it would throw before the diagnostic could print.
+  assert.ok(results.length, "no suggestions at all");
   assert.match(label(results[0]), /Bengaluru/i,
     `first suggestion was "${label(results[0])}"`);
 });
@@ -117,6 +123,7 @@ test("the label carries both names, so the old one is recognisable", async () =>
   const res = await fetch(`${BASE}/api/geocode?q=Shimoga`);
   const { results } = await res.json();
   const hit = results.find(r => /Shivamogga/i.test(label(r)));
+  assert.ok(hit, `Shivamogga missing — got: ${results.map(label).join(" | ") || "nothing"}`);
   assert.match(label(hit), /Shimoga/i,
     "someone who typed Shimoga needs to see Shimoga in the option they are picking");
 });
@@ -126,6 +133,83 @@ test("an alias does not produce a duplicate of the same city", async () => {
   const { results } = await res.json();
   const blr = results.filter(r => /Bengaluru/i.test(label(r)));
   assert.equal(blr.length, 1, `one entry per city — got ${blr.map(label).join(" | ")}`);
+});
+
+// --- The curated list must help, never crowd out ---------------------------
+//
+// Ranking curated matches first is only safe if they cannot fill the response.
+// The first version of this matched against the whole "Bengaluru, India"
+// string, so every prefix of "India" matched every Indian entry, took all eight
+// slots, and hid whatever the real geocoder found — including towns that are
+// genuinely called Indi.
+
+test("a curated match never buries a real town", async () => {
+  const res = await fetch(`${BASE}/api/geocode?q=Indi`);
+  const { results } = await res.json();
+  assert.ok(results.length > 0, "no results at all");
+  assert.ok(results.some(r => /^Indi\b/i.test(r.name)),
+    `"Indi" must offer the town of Indi — got: ${results.map(label).join(" | ")}`);
+});
+
+test("the country name is not a search term", async () => {
+  // Nobody types "India" meaning "show me eight arbitrary Indian cities".
+  const res = await fetch(`${BASE}/api/geocode?q=India`);
+  const { results } = await res.json();
+  const metros = results.filter(r => /^(New Delhi|Mumbai|Bengaluru|Chennai|Kolkata)\b/i.test(r.name));
+  assert.ok(metros.length <= 1,
+    `matching the country suffix returned the metro list: ${results.map(label).join(" | ")}`);
+});
+
+test("upstream results are not deduped against each other", async () => {
+  // Dedup exists to collapse a curated row against its upstream twin. Two
+  // distinct places the geocoder returned must both survive — in rural India
+  // two same-named villages can sit a few km apart, and dropping one silently
+  // moves someone's birthplace.
+  const res = await fetch(`${BASE}/api/geocode?q=Indianapolis`);
+  const { results } = await res.json();
+  const raw = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=Indianapolis")
+    .then(r => r.json()).catch(() => null);
+  if (!raw || !raw.results) return; // upstream unreachable; nothing to compare against
+  assert.equal(results.length, raw.results.length,
+    `dropped ${raw.results.length - results.length} distinct upstream places`);
+});
+
+test("merging keeps the state, which is what disambiguates an Indian city", async () => {
+  // The curated rows carry no admin1. If a curated row simply replaces its
+  // upstream twin, the user loses the one field that tells them which Kochi
+  // this is — and the client builds its label from [name, admin1, country].
+  const res = await fetch(`${BASE}/api/geocode?q=Kochi`);
+  const { results } = await res.json();
+  const hit = results.find(r => /^Kochi/i.test(r.name));
+  assert.ok(hit, "Kochi missing entirely");
+  assert.ok(hit.admin1, `expected a state on "${label(hit)}"`);
+});
+
+test("the parenthetical only shows a spelling the user actually typed", async () => {
+  // Substring matching made a mid-word fragment match an alias and render the
+  // whole alias in brackets: "lore" produced "Bengaluru (Bangalore)", asserting
+  // a spelling nobody typed. The bracket is a promise about the user's input.
+  for (const q of ["lore", "mog", "bay"]) {
+    const res = await fetch(`${BASE}/api/geocode?q=${q}`);
+    const { results } = await res.json();
+    const bogus = results.filter(r => {
+      const m = /\(([^)]+)\)/.exec(r.name);
+      return m && !m[1].toLowerCase().startsWith(q);
+    });
+    assert.deepStrictEqual(bogus.map(label), [],
+      `"${q}" should not claim the user typed a full alias`);
+  }
+});
+
+test("source describes what actually came back", async () => {
+  // This field is the only observability on which path ran, so it has to be
+  // derived from the merged list rather than from the inputs to the merge.
+  const res = await fetch(`${BASE}/api/geocode?q=Bengaluru`);
+  const { results, source } = await res.json();
+  assert.ok(["merged", "builtin", "open-meteo"].includes(source));
+  if (source === "merged") {
+    assert.ok(results.length > 1, "\"merged\" implies both sources contributed");
+  }
 });
 
 test("opening it up did not open up the rest of the API", async () => {
