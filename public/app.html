@@ -75,8 +75,31 @@
           <button type="button" id="logoutBtn" class="logout">Log out</button>
         </div>
 
-        <!-- Your chart sticks once cast, so this is an edit affordance rather
-             than a prompt to cast again. Hidden until there's a chart. -->
+        <!-- Whose chart is on screen. Your own is the profile and persists;
+             anyone else is a one-off view that is never saved as your profile. -->
+        <div class="profile-head" id="profileHead" data-pane="chart" hidden>
+          <span class="ph-who" id="phWho">your chart</span>
+          <button type="button" class="ph-back" id="backToMine" hidden>back to mine</button>
+        </div>
+
+        <!-- Your reading, as a persistent profile. Rendered on every cast. -->
+        <div class="profile" id="profile" data-pane="chart" hidden></div>
+
+        <!-- The two things you can do with a second chart. The ship check used
+             to be a full card in the profile; it lives here now so the feed
+             stays life-areas-only, but it is still the only way into the
+             compatibility form. -->
+        <button type="button" class="check-other" id="checkOther" data-pane="chart" hidden>check someone else ↗</button>
+        <button type="button" class="check-other" id="shipCheckBtn" data-pane="chart" hidden>check a ship ♡</button>
+
+        <!-- The birth form sits BELOW the reading on purpose. Your chart sticks
+             once cast, so after the first cast this is an edit affordance you go
+             looking for, not a prompt to cast again — and the reading should own
+             the top of the pane rather than the input that produced it.
+             First run still works because everything above is hidden until a
+             chart exists, so a new user sees the expanded form and nothing else.
+             The toggle is hidden until there's a chart; renderChartCard reveals
+             it and collapses the form (setFormOpen(false)). -->
         <button type="button" class="form-toggle" id="formToggle" data-pane="chart" aria-expanded="true" aria-controls="birthForm" hidden>
           <span class="ft-label">edit my birth details</span><span class="ft-caret">▾</span>
         </button>
@@ -125,23 +148,6 @@
           <button type="submit" id="computeBtn">cast my chart ✦</button>
           <p class="err" id="formErr" hidden></p>
         </form>
-
-        <!-- Whose chart is on screen. Your own is the profile and persists;
-             anyone else is a one-off view that is never saved as your profile. -->
-        <div class="profile-head" id="profileHead" data-pane="chart" hidden>
-          <span class="ph-who" id="phWho">your chart</span>
-          <button type="button" class="ph-back" id="backToMine" hidden>back to mine</button>
-        </div>
-
-        <!-- Your reading, as a persistent profile. Rendered on every cast. -->
-        <div class="profile" id="profile" data-pane="chart" hidden></div>
-
-        <!-- The two things you can do with a second chart. The ship check used
-             to be a full card in the profile; it lives here now so the feed
-             stays life-areas-only, but it is still the only way into the
-             compatibility form. -->
-        <button type="button" class="check-other" id="checkOther" data-pane="chart" hidden>check someone else ↗</button>
-        <button type="button" class="check-other" id="shipCheckBtn" data-pane="chart" hidden>check a ship ♡</button>
 
         <!-- Invite link: they cast their own chart on a public page, no account
              needed, and you both get the compatibility score. -->
