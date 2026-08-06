@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>(function(){try{var t=localStorage.getItem("theme");document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light");}catch(e){document.documentElement.setAttribute("data-theme","light");}})();</script>
-    <title>Pythia · Vedic Astrology &amp; Numerology Guide</title>
-    <meta name="description" content="Pythia is a free web app that computes your sidereal (Lahiri) Vedic astrology birth chart with the Swiss Ephemeris and lets you explore it with an AI guide — dasha, yogas, compatibility and remedies." />
+    <title>Pythia · Your real Vedic birth chart, explained like a person</title>
+    <meta name="description" content="Your actual Vedic birth chart — computed from your birth date, time and place with the Swiss Ephemeris, then explained in plain English. Your Cosmic ID, a straight read on love, work and family, real compatibility checks, and a chat that answers from your own placements. Free." />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
-    <link rel="stylesheet" href="styles.css?v7" />
+    <link rel="stylesheet" href="styles.css?v8" />
   </head>
   <body class="site">
     <header class="site-nav">
@@ -38,85 +38,245 @@
       <section class="hero">
         <img class="hero-logo" src="logo.png" alt="Pythia logo" />
         <h1 class="hero-name">Pythia</h1>
-        <p class="hero-tag">Your real chart. Actually calculated — not vibes.</p>
+        <p class="hero-tag">Your real Vedic birth chart, explained like a person.</p>
         <p class="hero-sub">
-          <b>Pythia</b> is a free Vedic astrology &amp; numerology app that speaks
-          human. Drop your birth date, time and place and it computes your true
-          sidereal (Lahiri) chart with the <b>Swiss Ephemeris</b> — the same math
-          the pros use — then hands you the fun stuff: your <b>Cosmic ID</b>,
-          today's vibe, the era you're in, your green flags and ship checks. Plain
-          english, zero jargon wall. Want the real chart? <b>Nerd mode</b>'s one tap away.
+          Give it your birth date, time and place. It calculates your actual
+          chart — the same math an astrologer uses — then tells you what's in it,
+          without the jargon wall.
         </p>
+        <p class="hero-sub hero-sub-kicker">Then you can just ask it things.</p>
         <div class="hero-cta">
-          <a class="btn btn-primary btn-lg" href="/app">Cast my chart — it's free</a>
-          <button type="button" class="btn btn-ghost btn-lg pwa-install-btn" data-pwa-install hidden>📲 Install Pythia App</button>
-          <a class="btn btn-ghost btn-lg" href="/app">Log in</a>
+          <a class="btn btn-primary btn-lg" href="/app">Cast my chart — free</a>
         </div>
-        <p class="hero-note">Sign up with email or Google in seconds. Your charts and chats stay yours — always.</p>
+        <!-- Log in and Install sit a size below the primary button on purpose:
+             three same-weight buttons made the one action that matters compete
+             with two that only some visitors need. -->
+        <div class="hero-cta hero-cta-alt">
+          <a class="btn btn-ghost" href="/app">Log in</a>
+          <button type="button" class="btn btn-ghost pwa-install-btn" data-pwa-install hidden>📲 Install the app</button>
+        </div>
+        <p class="hero-note">Takes about a minute. Free, no card. Your charts and chats stay yours.</p>
+      </section>
+
+      <!-- Proof, before any explaining. The card below is the app's own
+           .cosmic-id component — same markup, same stylesheet — filled with
+           real output from the engine for 14 Jul 1998, 09:20, Bengaluru. It is
+           deliberately not a screenshot: a screenshot goes stale the moment the
+           component changes, this cannot. If you restyle the Cosmic ID, this
+           follows automatically. -->
+      <section class="section">
+        <h2 class="section-title">This is what shows up</h2>
+        <p class="section-lead">
+          A real chart, drawn with the same card the app uses — the numbers came
+          out of the engine, not out of a designer's head.
+        </p>
+        <div class="proof">
+          <div class="proof-card">
+            <div class="cosmic-id" style="--elem:#7dd3fc">
+              <div class="cid-watermark" aria-hidden="true">♒︎</div>
+              <div class="cid-top">
+                <div class="cid-head">✦ Your Cosmic ID</div>
+                <span class="cid-elem">Air</span>
+              </div>
+              <ul class="cid-rows">
+                <li><span class="cid-glyph">☾</span><span class="cid-label">Moon</span>
+                  <span class="cid-val">Aquarius<span class="cid-zodiac">♒︎</span><small>Kumbha</small></span></li>
+                <li><span class="cid-glyph">★</span><span class="cid-label">Star</span>
+                  <span class="cid-val">Purva Bhadrapada<small>pada 2</small></span></li>
+                <li><span class="cid-glyph">↑</span><span class="cid-label">Rising</span>
+                  <span class="cid-val">Leo<span class="cid-zodiac">♌︎</span><small>Simha</small></span></li>
+                <li><span class="cid-glyph">⚚</span><span class="cid-label">Ruler</span>
+                  <span class="cid-val">Sun<small>neutral, mixed</small></span></li>
+              </ul>
+              <div class="cid-arch">the quiet grind</div>
+              <ul class="cid-stats">
+                <li><span class="cid-stat-label">CHAOS</span><span class="cid-bar"><i style="width:50%"></i></span><span class="cid-stat-val">50</span></li>
+                <li><span class="cid-stat-label">SOFTNESS</span><span class="cid-bar"><i style="width:65%"></i></span><span class="cid-stat-val">65</span></li>
+                <li><span class="cid-stat-label">LOCK-IN</span><span class="cid-bar"><i style="width:76%"></i></span><span class="cid-stat-val">76</span></li>
+                <li><span class="cid-stat-label">CHARM</span><span class="cid-bar"><i style="width:48%"></i></span><span class="cid-stat-val">48</span></li>
+              </ul>
+              <div class="cid-vibe">“original, humane, ahead of the curve”</div>
+            </div>
+            <p class="proof-cap">Your card, from your birth details. Shareable.</p>
+          </div>
+
+          <div class="proof-card">
+            <div class="proof-chat">
+              <div class="msg user">
+                <div class="avatar">you</div>
+                <div class="body"><p>why does work keep almost happening and then not?</p></div>
+              </div>
+              <div class="msg assistant">
+                <div class="avatar">✦</div>
+                <div class="body">
+                  <p>Your 10th house — the work one — has <strong>Venus in Taurus</strong>, its own sign. That's a strong placement. The work itself isn't where the drag is.</p>
+                  <p>The drag is timing. You've been in a <strong>Saturn</strong> period since 2008, and your Saturn sits in Aries, the sign it's weakest in. Saturn's whole method is slow, and only once it's satisfied. So the near-misses aren't a verdict on your ability — they're a toll.</p>
+                  <p>That period runs to <strong>June 2027</strong>. Want me to show you which windows inside it open up?</p>
+                </div>
+              </div>
+            </div>
+            <p class="proof-cap">An example of how it answers — every claim above is read off that chart.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- "Takes about a minute" is a claim until the steps are on the page.
+           Reuses the .features grid, which already collapses 3 → 2 → 1. -->
+      <section class="section">
+        <h2 class="section-title">How it works</h2>
+        <p class="section-lead">Three steps, about a minute, and you never do it again.</p>
+        <div class="features">
+          <div class="feature">
+            <div class="feature-ic">1</div>
+            <h3>Your birth details</h3>
+            <p>Date, time, and the city you were born in. Start typing the city and pick it from the list — coordinates and timezone fill themselves in.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-ic">2</div>
+            <h3>Your chart, cast properly</h3>
+            <p>Your planetary positions, computed from your own coordinates and birth minute with the Swiss Ephemeris — the engine professional astrologers use, not a lookup table.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-ic">3</div>
+            <h3>Ask it anything</h3>
+            <p>Your chart lands in a chat. Ask about work, about someone you're seeing, about why this year feels the way it does. It answers from what's in your chart.</p>
+          </div>
+        </div>
       </section>
 
       <section class="section">
         <h2 class="section-title">What you actually get</h2>
         <p class="section-lead">
-          All of it built from your real birth details — not a one-size-fits-all daily horoscope.
+          All of it built from your own birth details — not a horoscope written for everyone born that month.
         </p>
         <div class="features">
           <div class="feature">
             <div class="feature-ic">✦</div>
             <h3>Your Cosmic ID</h3>
-            <p>Your Moon sign, nakshatra and rising — the big three that actually run the show — in one clean, shareable card.</p>
-          </div>
-          <div class="feature">
-            <div class="feature-ic">◑</div>
-            <h3>Today's vibe</h3>
-            <p>A daily read on your energy from the Moon's transit — main-character day, rest day, lock-in day — so you know how to play it.</p>
-          </div>
-          <div class="feature">
-            <div class="feature-ic">❁</div>
-            <h3>The era you're in</h3>
-            <p>Your live dasha timing, translated: soft-life era, glow-up era, lock-in era. Know the chapter you're actually in, with real dates.</p>
+            <p>Moon, star, rising and the planet that rules your chart, in one card you can share. The placements that actually run the show — and how much say you have over them.</p>
           </div>
           <div class="feature">
             <div class="feature-ic">✧</div>
-            <h3>Your green flags</h3>
-            <p>The lucky combinations (yogas) hiding in your chart, surfaced as plain-language superpowers — plus the heads-ups to go gentle on.</p>
-          </div>
-          <div class="feature">
-            <div class="feature-ic">⚭</div>
-            <h3>Ship check</h3>
-            <p>Real 36-guna compatibility with anyone — crush, situationship, whoever — as one big verdict you can share. Yes, check the situationship.</p>
+            <h3>Ask it anything</h3>
+            <p>A chat that has read your chart. Answers come from your actual placements, not from whatever you sounded like you wanted to hear.</p>
           </div>
           <div class="feature">
             <div class="feature-ic">☍</div>
-            <h3>Talk to it — or go full nerd</h3>
-            <p>Ask your chart anything and get answers grounded in the real math. Flip on <b>nerd mode</b> for every table — grahas, vargas, ashtakavarga.</p>
+            <h3>Love, work, family, money</h3>
+            <p>A straight read on each part of your life, drawn from the part of your chart that governs it. Yes, including the situationship.</p>
           </div>
+          <div class="feature">
+            <div class="feature-ic">⚭</div>
+            <h3>Compatibility with anyone</h3>
+            <p>Real Vedic compatibility scored against someone else's chart — crush, partner, whoever. One clear verdict, and you can send it to them. It's the Ship check tab.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-ic">◑</div>
+            <h3>One line a day</h3>
+            <p>A single notification on where the Moon is sitting for you today. Main-character day, rest day, low-battery day. Enough to plan around.</p>
+          </div>
+          <div class="feature">
+            <div class="feature-ic">❁</div>
+            <h3>Nerd mode</h3>
+            <p>One tap and every table is there — grahas, vargas, ashtakavarga, dashas, the 36-guna breakdown. Sidereal, Lahiri, Swiss Ephemeris. The whole apparatus, if you want it.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- .accounts is this page's centered-card band; it's the shell for any
+           single block of prose, not just the account one below. -->
+      <section class="accounts">
+        <div class="accounts-card">
+          <h2>If you've used an astrology app before</h2>
+          <p>
+            Most of them sort you by sun sign and write one post for everyone who
+            shares it. Pythia computes <b>your</b> chart, from your own
+            coordinates and your own birth minute — so two people born the same
+            day in different cities get different readings, because they have
+            different charts.
+          </p>
+          <p>
+            And when it tells you something, it's reading your placements. You
+            can ask it why, and it will show you which part of the chart the
+            answer came from.
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Questions people actually ask</h2>
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary>I don't know my exact birth time.</summary>
+            <p>
+              Use <b>12:00</b> — the app suggests it. Most of your chart is
+              stable across a whole day: your Moon sign, your nakshatra, and
+              where the planets sit barely move. What does shift is your
+              <b>rising sign</b> and which house each planet lands in, so treat
+              those two as approximate until you find the real time. A birth
+              certificate or hospital record usually has it.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Is it actually free?</summary>
+            <p>
+              Yes. No card, no trial, nothing to cancel. Everything described on
+              this page is free to use.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Why is my sign different from the one I've always known?</summary>
+            <p>
+              Because Vedic astrology uses the <b>sidereal</b> zodiac, which
+              tracks the constellations where they actually sit now. The Western
+              one uses a fixed zodiac that has drifted roughly 24° over the last
+              two thousand years. In practice your Vedic sign is usually the one
+              before your familiar one. Nothing is broken — it's a different
+              measurement, and it's the one this entire system is built on.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Why do I need an account?</summary>
+            <p>
+              So your chart, your saved people and your chats stay yours and are
+              waiting when you come back, instead of you re-typing your birth
+              details every visit. It's free and it's one tap with Google.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Do I have to believe in astrology?</summary>
+            <p>
+              No. Plenty of people use it as a way to look at a decision from an
+              angle they wouldn't have picked themselves. It's a guidance tool,
+              not fixed fate — and for anything legal, financial or medical, talk
+              to a qualified professional.
+            </p>
+          </details>
         </div>
       </section>
 
       <section class="accounts">
         <div class="accounts-card">
-          <h2>Your account &amp; sign-in</h2>
+          <h2>Your account &amp; your data</h2>
           <p>
-            Pythia needs a free account so it can privately save the charts and
-            conversations you create, and keep them tied to you across visits. You can
-            sign up with an <b>email address and password</b>, or use
+            The account is free. It exists so your charts and chats stay private
+            and stay yours — and so you aren't re-entering your birth details
+            every visit. New accounts are created with
             <b>Sign in with Google</b>.
           </p>
           <p>
-            When you choose Sign in with Google, Pythia uses only your <b>name, email
-            address and basic profile</b> to create and secure your account. It
-            <b>never</b> posts on your behalf, reads your Gmail, or accesses any other
-            Google data. Exactly what we store and why is described in our
-            <a href="/privacy">Privacy Policy</a>; your use of Pythia is covered by our
-            <a href="/terms">Terms of Service</a>.
+            Google hands Pythia your <b>name, email address and basic profile</b>.
+            That's the whole list. It <b>never</b> posts for you, never reads your
+            Gmail, and never touches anything else in your Google account. What we
+            store and why is in the <a href="/privacy">Privacy Policy</a>, and the
+            <a href="/terms">Terms of Service</a> cover the rest.
           </p>
         </div>
       </section>
 
       <section class="cta-band">
-        <h2>Cast your chart in under a minute.</h2>
-        <a class="btn btn-primary btn-lg" href="/app">Cast my chart</a>
+        <h2>Your chart is already there. Go read it.</h2>
+        <a class="btn btn-primary btn-lg" href="/app">Cast my chart — free</a>
       </section>
     </main>
 
@@ -137,9 +297,9 @@
       </p>
       <p class="foot-copy">© 2026 Pythia</p>
     </footer>
-    <script src="theme.js?v7"></script>
+    <script src="theme.js?v8"></script>
     <!-- The install prompt can fire here too, so the worker registers from the
          landing page as well as from /app. -->
-    <script src="sw-register.js?v7"></script>
+    <script src="sw-register.js?v8"></script>
   </body>
 </html>

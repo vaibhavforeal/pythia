@@ -1442,8 +1442,21 @@ body.kb-open .tab-bar { transform: translateY(110%); }
 .hero-tag { font-size: clamp(15px, 2.4vw, 19px); color: var(--sky-deep); font-weight: 600; margin: 0 0 18px; }
 .hero-sub { font-size: clamp(15px, 2.2vw, 18px); color: var(--muted); line-height: 1.6; margin: 0 auto 24px; max-width: 620px; }
 .hero-sub b { color: var(--ink); }
+/* The one-line turn after the pitch. Sits closer, reads as the point rather
+   than as more explanation — which is why it is a paragraph of its own. */
+.hero-sub-kicker { color: var(--ink); font-weight: 500; margin-top: -12px; }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.hero-note { margin-top: 16px; font-size: 12px; color: var(--faint); }
+/* Log in and Install live here, one size down from the primary button, so the
+   hero has a single obvious action instead of three competing ones. */
+.hero-cta-alt { margin-top: 10px; }
+/* This line carries the "free, no card" promise, and it sits directly on the
+   illustrated sky — --faint at 12px disappeared into the artwork. Backing plate
+   plus --muted so it survives whatever pixel of the background it lands on. */
+.hero-note {
+  margin: 16px auto 0; font-size: 13px; color: var(--muted);
+  display: inline-block; padding: 6px 14px; border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+}
 
 .features {
   max-width: 1000px; margin: 24px auto 8px; padding: 0 24px;
@@ -1459,6 +1472,48 @@ body.kb-open .tab-bar { transform: translateY(110%); }
 }
 .feature h3 { font-family: var(--font-head); font-size: 17px; color: var(--ink); margin: 0 0 6px; }
 .feature p { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 0; }
+
+/* Proof band. Holds the app's real .cosmic-id and .msg components, so it needs
+   no styling of its own beyond the two-up layout — which is the point. The
+   Cosmic ID is fixed-width because it is a card with its own internal grid;
+   the chat takes the remaining room. */
+.proof {
+  max-width: 1000px; margin: 20px auto 8px; padding: 0 24px;
+  display: grid; grid-template-columns: minmax(0, 372px) minmax(0, 1fr);
+  gap: 20px; align-items: start;
+}
+.proof-chat {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 18px 2px 4px;
+}
+/* .msg is built for the chat column's own width; inside a card it just needs
+   its outer auto-margin dropped so it sits left like a real transcript. */
+.proof-chat .msg { margin: 0 0 12px; padding: 0 18px; }
+.proof-chat .msg:last-child { margin-bottom: 6px; }
+.proof-chat .msg .body { font-size: 14px; }
+/* --muted, not --faint: these captions land on the illustrated sky too. */
+.proof-cap { margin: 10px 2px 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 860px) {
+  .proof { grid-template-columns: 1fr; }
+}
+
+/* FAQ. Native <details>, so it works with no JS and the answers are still in
+   the DOM for search engines. The default disclosure triangle is replaced with
+   a +/− because the triangle renders differently in every browser. */
+.faq-list { max-width: 760px; margin: 18px auto 8px; padding: 0 24px; }
+.faq-item {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 14px 18px; margin-bottom: 10px;
+}
+.faq-item summary {
+  font-family: var(--font-head); font-size: 15px; font-weight: 600; color: var(--ink);
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: "+"; color: var(--sky); font-weight: 700; }
+.faq-item[open] summary::after { content: "−"; }
+.faq-item p { color: var(--muted); font-size: 14px; line-height: 1.65; margin: 10px 0 0; }
+.faq-item b { color: var(--ink); }
 
 .accounts { display: flex; justify-content: center; padding: 28px 24px 8px; }
 .accounts-card {
