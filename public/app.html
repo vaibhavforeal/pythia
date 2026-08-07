@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" />
-    <link rel="stylesheet" href="styles.css?v8" />
+    <link rel="stylesheet" href="styles.css?v9" />
     <!-- Served from our own origin, at a version pinned in package.json. The
          CDN URL this replaces floated to latest with no SRI, so a third party
          could change what executes here — and in the native shell that runs
@@ -366,6 +366,14 @@
               <path d="M12 7.6V12l3 1.8" />
             </svg>
           </button>
+          <!-- Talk instead of typing. type="button" or it submits the form. -->
+          <button type="button" id="micBtn" class="composer-history" aria-label="Call Pythia" title="Call Pythia">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3.5a2.6 2.6 0 0 1 2.6 2.6v5.2a2.6 2.6 0 0 1-5.2 0V6.1A2.6 2.6 0 0 1 12 3.5z" />
+              <path d="M5.5 10.8a6.5 6.5 0 0 0 13 0" />
+              <path d="M12 17.3v3.2" />
+            </svg>
+          </button>
           <textarea id="input" rows="1" placeholder="cast your chart, then ask me anything…" disabled></textarea>
           <button type="submit" id="sendBtn" disabled>Send</button>
         </form>
@@ -420,6 +428,39 @@
       </button>
     </nav>
 
+    <!-- ===== Call overlay =====
+         A sibling of .app for the same reason #authOverlay is: as a child it
+         becomes a grid item and inherits the shell's layout. -->
+    <div id="callOverlay" class="call-overlay" hidden data-view="live">
+      <div class="call-box">
+        <div class="call-live">
+          <div class="call-orb" aria-hidden="true"><span></span></div>
+          <p class="call-state" id="callState" role="status" aria-live="polite">connecting</p>
+          <p class="call-caption" id="callCaption" aria-live="polite"></p>
+          <p class="call-meta" id="callMeta"></p>
+          <div class="call-actions">
+            <label class="call-voice">
+              Voice
+              <select id="callVoice">
+                <option value="warm">Warm</option>
+                <option value="calm">Calm</option>
+              </select>
+            </label>
+            <button type="button" id="callMute" aria-pressed="false">Mute</button>
+            <button type="button" id="callEnd" class="call-end">End call</button>
+          </div>
+        </div>
+        <div class="call-error">
+          <h2 id="callErrTitle">Couldn't start the call</h2>
+          <p id="callErrDetail"></p>
+          <button type="button" id="callClose">Close</button>
+        </div>
+      </div>
+      <!-- playsinline is not optional: without it iOS Safari takes the audio
+           fullscreen and the call UI disappears behind a video player. -->
+      <audio id="callAudio" autoplay playsinline></audio>
+    </div>
+
     <!-- ===== Auth overlay (login / register) ===== -->
     <div id="authOverlay" class="auth-overlay">
       <div class="auth-box">
@@ -454,18 +495,20 @@
       </div>
     </div>
 
-    <script src="theme.js?v8"></script>
+    <script src="theme.js?v9"></script>
     <!-- Shared birth-form plumbing, yoga names, generated rarity table. -->
-    <script src="api.js?v8"></script>
-    <script src="push-client.js?v8"></script>
-    <script src="geocode.js?v8"></script>
-    <script src="birth-cache.js?v8"></script>
-    <script src="domains.js?v8"></script>
-    <script src="share-image.js?v8"></script>
-    <script src="yoga-names.js?v8"></script>
-    <script src="yoga-rarity.js?v8"></script>
-    <script src="app.js?v8"></script>
+    <script src="api.js?v9"></script>
+    <script src="push-client.js?v9"></script>
+    <script src="geocode.js?v9"></script>
+    <script src="birth-cache.js?v9"></script>
+    <script src="domains.js?v9"></script>
+    <script src="share-image.js?v9"></script>
+    <script src="yoga-names.js?v9"></script>
+    <script src="yoga-rarity.js?v9"></script>
+    <script src="app.js?v9"></script>
+    <!-- After app.js, so it shares that scope and can read the cast chart. -->
+    <script src="voice.js?v9"></script>
     <!-- After api.js, so it can tell the web from the native shell. -->
-    <script src="sw-register.js?v8"></script>
+    <script src="sw-register.js?v9"></script>
   </body>
 </html>

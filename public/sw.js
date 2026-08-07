@@ -25,7 +25,7 @@
 //      failures are swallowed on purpose: a background refresh that fails must
 //      never evict a working cached asset.
 
-const VERSION = "v8";
+const VERSION = "v9";
 const SHELL = `pythia-shell-${VERSION}`;
 
 // Assets the HTML requests as `<name>?<VERSION>`, and the reason a release can
@@ -51,7 +51,7 @@ const VERSIONED = [
   "/theme.js", "/api.js", "/push-client.js", "/geocode.js",
   "/birth-cache.js", "/domains.js",
   "/share-image.js", "/yoga-names.js", "/yoga-rarity.js", "/app.js",
-  "/sw-register.js"
+  "/voice.js", "/sw-register.js"
 ];
 
 // The rest of the shell. `/app` is the manifest's start_url; `/` is the landing

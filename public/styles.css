@@ -2111,3 +2111,94 @@ body.kb-open .tab-bar { transform: translateY(110%); }
   font-weight: 600;
   color: var(--accent, currentColor);
 }
+
+/* ===== Call overlay ========================================================
+   A sibling of .app, like #authOverlay, so it can never become a grid item.
+
+   The orb is the only moving part. On a call the caller has nothing to look at
+   and no way to tell the difference between "thinking" and "died", so the one
+   piece of motion is doing real work: it breathes while listening, quickens
+   while the agent speaks, and holds still while it thinks. */
+.call-overlay {
+  position: fixed; inset: 0; z-index: 320;
+  display: grid; place-items: center; padding: 20px;
+  max-height: 100vh;
+  max-height: 100dvh;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.42), rgba(232, 242, 253, 0.62)),
+    url("cosmos-bg.webp") center center / cover no-repeat fixed;
+}
+[data-theme="dark"] .call-overlay {
+  background:
+    linear-gradient(rgba(9, 13, 27, 0.86), rgba(7, 11, 22, 0.92)),
+    url("cosmos-bg.webp") center center / cover no-repeat fixed;
+}
+.call-box {
+  width: 100%; max-width: 380px; margin: auto; text-align: center;
+}
+
+/* One overlay, two views, so a failure never leaves a dead call on screen. */
+.call-overlay[data-view="live"] .call-error,
+.call-overlay[data-view="error"] .call-live { display: none; }
+
+.call-orb {
+  width: 132px; height: 132px; margin: 0 auto 22px;
+  display: grid; place-items: center;
+}
+.call-orb span {
+  display: block; width: 100%; height: 100%; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--sky, #0284c7), var(--sky-deep, #0369a1));
+  box-shadow: 0 12px 40px rgba(2, 132, 199, 0.35);
+  animation: call-breathe 3.4s ease-in-out infinite;
+}
+@keyframes call-breathe {
+  0%, 100% { transform: scale(0.94); opacity: 0.86; }
+  50%      { transform: scale(1);    opacity: 1; }
+}
+/* Speaking: quicker, so it reads as a voice rather than a wait. */
+.call-overlay[data-state="speaking"] .call-orb span { animation-duration: 1.1s; }
+/* Thinking: still. Motion here would suggest it is talking when it is not. */
+.call-overlay[data-state="thinking"] .call-orb span { animation-play-state: paused; }
+/* Hearing you: pull back, so the caller can see they have the floor. */
+.call-overlay[data-state="hearing"] .call-orb span {
+  animation-duration: 2s;
+  box-shadow: 0 12px 40px rgba(2, 132, 199, 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .call-orb span { animation: none; }
+}
+
+.call-state {
+  margin: 0 0 6px; font-size: 0.82rem; letter-spacing: 0.08em;
+  text-transform: uppercase; opacity: 0.65;
+}
+/* Fixed height, so the panel does not jump every time a caption arrives. */
+.call-caption {
+  margin: 0 0 10px; min-height: 3.4em; font-size: 1.05rem; line-height: 1.5;
+}
+.call-meta { margin: 0 0 18px; font-size: 0.8rem; opacity: 0.6; min-height: 1.2em; }
+
+.call-actions {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; flex-wrap: wrap;
+}
+.call-actions button {
+  font: inherit; padding: 9px 16px; border-radius: 999px;
+  border: 1px solid var(--line, #cbd5e1); background: transparent;
+  color: inherit; cursor: pointer;
+}
+.call-actions .call-end {
+  background: #dc2626; border-color: #dc2626; color: #fff;
+}
+.call-voice { font-size: 0.82rem; opacity: 0.75; display: inline-flex; gap: 6px; align-items: center; }
+.call-voice select { font: inherit; padding: 6px 8px; border-radius: 8px; }
+
+.call-error h2 { margin: 0 0 8px; font-size: 1.15rem; }
+.call-error p { margin: 0 0 18px; opacity: 0.75; line-height: 1.55; }
+.call-error button {
+  font: inherit; padding: 9px 20px; border-radius: 999px;
+  border: 0; background: var(--sky, #0284c7); color: #fff; cursor: pointer;
+}
+
+/* The composer keeps its own scroll while a call is up. */
+body.call-open { overflow: hidden; }
