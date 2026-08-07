@@ -7,7 +7,8 @@ const express = require("express");
 const { computeChart, chartToText } = require("./astro");
 const { computeSynthesis } = require("./synthesis");
 const {
-  computeGunaMilan, moonInputFromChart, computeManglik, manglikVerdict, matchToText
+  computeGunaMilan, computeGunaMilanSymmetric, moonInputFromChart,
+  computeManglik, manglikVerdict, matchToText
 } = require("./gunamilan");
 const { loadSkill } = require("./skill");
 const { CITIES } = require("./cities");
@@ -22,6 +23,7 @@ const otpLib = require("./otp");
 const sms = require("./sms");
 const soulid = require("./soulid");
 const friendsLib = require("./friends");
+const genderLib = require("./gender");
 const notify = require("./notify");
 const push = require("./push");
 
@@ -547,7 +549,10 @@ app.get("/api/account", async (req, res) => {
       // The client restores its profile from here, so a new device doesn't
       // start blank. Your own birth is yours to read back.
       birth: u.birth || null,
-      birthRole: u.birthRole || "groom"
+      birthRole: u.birthRole || "groom",
+      // Back-filled here rather than in the store, so both backends answer the
+      // same way: accounts older than the gender field only recorded a role.
+      gender: u.gender || genderLib.genderFromRole(u.birthRole) || null
     });
   } catch (err) {
     console.error("account error:", err);
@@ -722,6 +727,9 @@ app.post("/api/people", async (req, res) => {
       id: crypto.randomUUID(),
       userId: req.userId,
       name: String(b.name || "").trim().slice(0, 80) || "Unnamed",
+      // Null when unstated — a saved person from before this field, or someone
+      // who didn't say. The match form asks only when it has to.
+      gender: genderLib.normalizeGender(b.gender),
       year: birth.year, month: birth.month, day: birth.day, hour: birth.hour, minute: birth.minute,
       lat: birth.lat, lon: birth.lon, tz: birth.tz,
       createdAt: new Date().toISOString()
@@ -766,7 +774,7 @@ app.post("/api/invites", async (req, res) => {
   try {
     const b = req.body || {};
     const birth = parseBirth(b); // validates; throws HttpError
-    const role = b.role === "bride" ? "bride" : "groom";
+    const role = genderLib.roleFromGender(b.gender, b.role);
     const existing = await invites.forUser(req.userId);
     if (existing) {
       // Unconditionally, including when expired. The `!isExpired` guard that
@@ -932,8 +940,12 @@ app.post("/api/account/birth", async (req, res) => {
   try {
     const b = req.body || {};
     const birth = parseBirth(b); // validates, throws HttpError
-    const role = b.role === "bride" ? "bride" : "groom";
-    await users.update(req.userId, { birth, birthRole: role });
+    // Gender is the fact we store; birthRole stays written alongside it because
+    // it's what the kutas index on, and because "other" leaves the role to the
+    // toggle. See server/gender.js for why the two are kept apart.
+    const gender = genderLib.normalizeGender(b.gender);
+    const role = genderLib.roleFromGender(gender, b.role);
+    await users.update(req.userId, { birth, birthRole: role, gender });
     res.json({ ok: true });
   } catch (err) {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
@@ -1155,8 +1167,9 @@ app.get("/api/friends", async (req, res) => {
           theirMoon && theirMoon.signIndex,
           transitMoon.signIndex
         );
-        // Guna Milan is directional; map by each person's stated role.
-        const iAmGroom = (me.birthRole || "groom") !== "bride";
+        // Guna Milan is directional; map by gender where it settles the role,
+        // and by the role they picked by hand where it doesn't.
+        const iAmGroom = genderLib.roleFromGender(me.gender, me.birthRole) !== "bride";
         const boy = iAmGroom ? myChart : theirChart;
         const girl = iAmGroom ? theirChart : myChart;
         const g = computeGunaMilan(moonInputFromChart(boy), moonInputFromChart(girl));
@@ -1525,10 +1538,29 @@ app.post("/api/match", (req, res) => {
     }
     const chartBoy = computeChart(parseBirth(body.boy));
     const chartGirl = computeChart(parseBirth(body.girl));
-    const result = computeGunaMilan(moonInputFromChart(chartBoy), moonInputFromChart(chartGirl));
+
+    // The kutas need one groom and one bride. Two stated genders that supply
+    // exactly that get the classical directional scoring; anything else — a
+    // same-sex couple, an "other", or a pair we simply weren't told about —
+    // gets scored both ways and averaged, rather than having a role assigned
+    // to someone who never claimed it. See computeGunaMilanSymmetric.
+    const gA = genderLib.normalizeGender(body.boy.gender);
+    const gB = genderLib.normalizeGender(body.girl.gender);
+    const isCouple = (gA === "male" && gB === "female") || (gA === "female" && gB === "male");
+    const symmetric = !!(gA && gB) && !isCouple;
+
+    const moonA = moonInputFromChart(chartBoy);
+    const moonB = moonInputFromChart(chartGirl);
+    const result = symmetric
+      ? computeGunaMilanSymmetric(moonA, moonB)
+      : computeGunaMilan(moonA, moonB);
+
     const boyM = computeManglik(chartBoy);
     const girlM = computeManglik(chartGirl);
-    result.manglik = { boy: boyM, girl: girlM, verdict: manglikVerdict(boyM, girlM) };
+    const labels = symmetric
+      ? { boy: body.boy.name || "the first partner", girl: body.girl.name || "the second partner" }
+      : undefined;
+    result.manglik = { boy: boyM, girl: girlM, verdict: manglikVerdict(boyM, girlM, labels) };
     res.json({ ...result, charts: { boy: chartBoy, girl: chartGirl } });
   } catch (err) {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
@@ -1923,7 +1955,11 @@ function parseBirth(b) {
   const nodeMode = b.nodeMode === "seventh" ? "seventh" : "jupiter";
   const nodeAspects = nodeMode === "seventh" ? [7] : [5, 7, 9];
   const name = b.name ? String(b.name).trim().slice(0, 80) : undefined;
-  return { ...nums, nodeAspects, nodeMode, name };
+  // Gender rides along with the birth input because the chart needs it: the
+  // kalatra-karaka is Venus for a man and Jupiter for a woman. Normalised here
+  // so an unrecognised value becomes null rather than reaching the synthesis.
+  const gender = genderLib.normalizeGender(b.gender);
+  return { ...nums, nodeAspects, nodeMode, name, gender };
 }
 
 // Last resort for anything a route threw synchronously (or passed to next).

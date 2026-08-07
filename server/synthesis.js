@@ -216,20 +216,69 @@ function domainSynthesis(chart, key) {
   };
 }
 
-function computeSynthesis(chart) {
+// Kalatra-karaka — the planet that signifies the spouse, and one of the few
+// places classical Jyotish reads a chart differently depending on whose it is:
+// Venus for a man, Jupiter for a woman. Every marriage-timing, spouse and
+// 7th-house judgement leans on it, so getting it from the wrong planet is not a
+// nuance — it reads the wrong body's dignity, house and dasha.
+//
+// The tradition states the rule for two genders and offers none for anyone
+// else, and we don't invent one. "other" gets both planets with `ambiguous`
+// set, so a reading can weigh them and say why, and an unanswered gender gets
+// nothing at all rather than a quiet default to Venus.
+const KALATRA_KARAKA = { male: "Venus", female: "Jupiter" };
+
+function marriageKaraka(chart, gender) {
+  const grade = key => {
+    const pl = (chart.planets || []).find(p => p.key === key);
+    if (!pl) return null;
+    const sun = (chart.planets || []).find(p => p.key === "Sun");
+    const combust = isCombust(pl, sun);
+    return {
+      key, house: pl.house, sign: pl.sign, signIndex: pl.signIndex,
+      dignity: dignityOf(key, pl.signIndex), combust, retro: !!pl.retro,
+      ...gradePlanet({ key, signIndex: pl.signIndex, house: pl.house, combust })
+    };
+  };
+
+  if (gender === "male" || gender === "female") {
+    const planet = grade(KALATRA_KARAKA[gender]);
+    return planet && {
+      ambiguous: false,
+      why: `${KALATRA_KARAKA[gender]} is the kalatra-karaka for a ${gender} nativity`,
+      planets: [planet]
+    };
+  }
+  if (gender === "other") {
+    const planets = [grade("Venus"), grade("Jupiter")].filter(Boolean);
+    return planets.length ? {
+      ambiguous: true,
+      why: "The classical rule assigns the kalatra-karaka by gender and gives none here, " +
+        "so both Venus and Jupiter are shown rather than one being picked",
+      planets
+    } : null;
+  }
+  return null; // never asked — say nothing rather than defaulting to Venus
+}
+
+function computeSynthesis(chart, gender) {
   const domains = {};
   for (const key of Object.keys(DOMAIN_SPEC)) {
     const r = domainSynthesis(chart, key);
     if (r) domains[key] = r;
   }
-  return { lagnaLord: lagnaLordCondition(chart), domains };
+  return {
+    lagnaLord: lagnaLordCondition(chart),
+    marriageKaraka: marriageKaraka(chart, gender),
+    domains
+  };
 }
 
 // Exposed for the test fixture, which needs to name the lord of an ascendant.
 const SIGN_LORD_AT = i => SIGN_LORD[i];
 
 module.exports = {
-  DOMAIN_SPEC, VERDICTS, VARGA_LABEL,
-  verdictFor, lagnaLordCondition, domainSynthesis, computeSynthesis,
+  DOMAIN_SPEC, VERDICTS, VARGA_LABEL, KALATRA_KARAKA,
+  verdictFor, lagnaLordCondition, marriageKaraka, domainSynthesis, computeSynthesis,
   vargaPlacement, pickSlot2, SIGN_LORD_AT
 };

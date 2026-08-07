@@ -78,6 +78,14 @@ const TABLES = {
     Saturn: [3, 4, 5, 8, 9, 10, 11],
     Lagna: [1, 2, 3, 4, 5, 8, 9, 11]
   },
+  // NOTE — Venus.Mars above is the one cell where the classical sources fork,
+  // and the 4 is deliberate. Phaladeepika (Mantreswara) ch.23 sl.8 and Brihat
+  // Jataka (Varahamihira) ch.9 v.6 both read [3, 5, 6, 9, 11, 12]; Phaladeepika
+  // then footnotes the alternative — "According to Parasara, the 3rd, 4th, 6th,
+  // 9th, 11th and 12th places from Mars" — which is what we use, matching the
+  // Parashari lineage the rest of this table follows. Engines that read
+  // Varahamihira here will differ from us by one bindu in two signs, and both
+  // are right. Don't "correct" the 4 to a 5 without changing lineage on purpose.
   Saturn: {
     Sun: [1, 2, 4, 7, 8, 10, 11],
     Moon: [3, 6, 11],
@@ -92,10 +100,37 @@ const TABLES = {
 
 // Guard: each planet's BAV must total its canonical bindu count.
 const EXPECTED_TOTALS = { Sun: 48, Moon: 49, Mars: 39, Mercury: 54, Jupiter: 56, Venus: 52, Saturn: 39 };
+
+// Counting the bindus only proves we typed the right NUMBER of houses — a 4
+// where a 5 belongs sails straight through, and shifts a bindu into the wrong
+// sign for every chart. So we also pin the sum of the house numbers themselves,
+// which no single-digit typo can survive.
+const EXPECTED_HOUSE_SUMS = { Sun: 344, Moon: 335, Mars: 280, Mercury: 367, Jupiter: 350, Venus: 354, Saturn: 289 };
+
 for (const P of TARGETS) {
-  const total = CONTRIBUTORS.reduce((s, C) => s + TABLES[P][C].length, 0);
+  let total = 0;
+  let houseSum = 0;
+  for (const C of CONTRIBUTORS) {
+    const houses = TABLES[P][C];
+    if (new Set(houses).size !== houses.length) {
+      throw new Error(`Ashtakavarga table ${P}/${C} repeats a house`);
+    }
+    for (const h of houses) {
+      if (!Number.isInteger(h) || h < 1 || h > 12) {
+        throw new Error(`Ashtakavarga table ${P}/${C} has out-of-range house ${h}`);
+      }
+      houseSum += h;
+    }
+    total += houses.length;
+  }
   if (total !== EXPECTED_TOTALS[P]) {
     throw new Error(`Ashtakavarga table for ${P} totals ${total}, expected ${EXPECTED_TOTALS[P]}`);
+  }
+  if (houseSum !== EXPECTED_HOUSE_SUMS[P]) {
+    throw new Error(
+      `Ashtakavarga table for ${P} has house-number sum ${houseSum}, expected ${EXPECTED_HOUSE_SUMS[P]} — ` +
+      `a benefic house was changed, not just miscounted`
+    );
   }
 }
 

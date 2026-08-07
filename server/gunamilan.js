@@ -275,6 +275,80 @@ function computeGunaMilan(boy, girl) {
   };
 }
 
+/**
+ * The same eight kutas, scored without designating a groom and a bride.
+ *
+ * The matrices above are [boy][girl] directional, so scoring a couple requires
+ * assigning one of each. For a man and a woman that assignment is given. For a
+ * same-sex couple — or anyone who told us "other", or didn't say — it isn't,
+ * and picking one anyway means silently labelling somebody as the bride to make
+ * the arithmetic run. That isn't a rounding error: swapping the two people
+ * changes the total for roughly two thirds of pairs, because Varna, Gana and
+ * Vashya all read differently by side. (Tara, Yoni, Graha Maitri, Bhakoot and
+ * Nadi come out the same either way — verified across the matrices, not
+ * assumed.)
+ *
+ * So we score it both ways and average, which makes the result invariant under
+ * swapping the two people — the property the gendered version gets for free
+ * from the roles. Both passes are returned alongside the average, and `spread`
+ * reports how far apart they were, because on a pair where the two readings
+ * disagree sharply the average is a summary of a genuine ambiguity rather than
+ * a precise answer, and the UI should be able to say so.
+ *
+ * We never infer anyone's gender, orientation or role from their chart.
+ *
+ * @param {object} a { nakIndex 0-26, signIndex 0-11, degInSign 0-30 }
+ * @param {object} b same shape
+ */
+function computeGunaMilanSymmetric(a, b) {
+  const passAB = computeGunaMilan(a, b);
+  const passBA = computeGunaMilan(b, a);
+
+  const kutas = passAB.kutas.map((k, i) => {
+    const other = passBA.kutas[i];
+    const score = round1((k.score + other.score) / 2);
+    const directional = k.score !== other.score;
+    return {
+      ...k,
+      score,
+      directional,
+      // Both readings, so a directional kuta can show its working rather than
+      // presenting a midpoint as though it were the classical value.
+      scores: [k.score, other.score],
+      detail: directional ? `${k.detail} — reads ${k.score} or ${other.score} by side` : k.detail
+    };
+  });
+
+  const total = round1(kutas.reduce((s, k) => s + k.score, 0));
+  // Bhakoot and Nadi are side-independent, so either pass carries them.
+  const { nadi, bhakoot } = passAB.doshas;
+  const verdict = verdictFor(total, nadi, bhakoot);
+  if (kutas.some(k => k.directional)) {
+    verdict.caveats = verdict.caveats.concat(
+      "Scored without a groom/bride assignment: the average of both readings. " +
+      "Varna, Gana and Vashya are directional in the classical tables, so they differ by side."
+    );
+  }
+
+  return {
+    symmetric: true,
+    a: labelPerson(a),
+    b: labelPerson(b),
+    // Kept so every existing consumer of a match result keeps working; with
+    // `symmetric` set these are just the first pass's assignment, not a claim
+    // about either person.
+    boy: labelPerson(a),
+    girl: labelPerson(b),
+    kutas,
+    total,
+    max: 36,
+    passes: { ab: round1(passAB.total), ba: round1(passBA.total) },
+    spread: round1(Math.abs(passAB.total - passBA.total)),
+    verdict,
+    doshas: { nadi, bhakoot }
+  };
+}
+
 function labelPerson(p) {
   return {
     nakIndex: p.nakIndex,
@@ -360,7 +434,11 @@ function computeManglik(chart) {
 
 // Combine two people's Manglik status into a match verdict, applying the mutual
 // (both-Manglik) cancellation and single-side mitigation.
-function manglikVerdict(boyM, girlM) {
+// `labels` names the two sides in the human-readable verdict. It defaults to
+// groom/bride, but a symmetrically-scored couple has neither, so the caller can
+// pass something that doesn't assign a role nobody claimed.
+function manglikVerdict(boyM, girlM, labels) {
+  const names = { boy: "groom", girl: "bride", ...(labels || {}) };
   if (!boyM.manglik && !girlM.manglik) {
     return { status: "clear", cancelled: false, warning: false,
       label: "Neither partner is Manglik — no Mangal dosha to reconcile." };
@@ -369,7 +447,7 @@ function manglikVerdict(boyM, girlM) {
     return { status: "cancelled", cancelled: true, warning: false,
       label: "Both partners are Manglik — the dosha is mutually cancelled (samshaya bhanga)." };
   }
-  const who = boyM.manglik ? "groom" : "bride";
+  const who = boyM.manglik ? names.boy : names.girl;
   const one = boyM.manglik ? boyM : girlM;
   if (one.selfCancellations.length) {
     return { status: "mitigated", cancelled: false, warning: true,
@@ -382,7 +460,16 @@ function manglikVerdict(boyM, girlM) {
 // Compact plain-text rendering of a match result for the LLM context window.
 function matchToText(m) {
   const L = [];
-  L.push(`Couple: ${m.boy.nakshatra} (${m.boy.sign}) [groom] × ${m.girl.nakshatra} (${m.girl.sign}) [bride]`);
+  // The LLM is told exactly what it's reading. Calling one of a same-sex couple
+  // "the groom" in the context window is how that label ends up in the reply.
+  if (m.symmetric) {
+    L.push(`Couple: ${m.a.nakshatra} (${m.a.sign}) × ${m.b.nakshatra} (${m.b.sign})`);
+    L.push("Scored symmetrically — no groom/bride assignment. Each kuta is the average of both readings; " +
+      "do not refer to either person as the groom or the bride.");
+    L.push(`Both readings totalled ${m.passes.ab} and ${m.passes.ba} (spread ${m.spread}).`);
+  } else {
+    L.push(`Couple: ${m.boy.nakshatra} (${m.boy.sign}) [groom] × ${m.girl.nakshatra} (${m.girl.sign}) [bride]`);
+  }
   L.push(`Ashtakoot total: ${m.total} / ${m.max} — ${m.verdict.label} (traditional minimum ${m.verdict.minimum})`);
   L.push("Kutas (score / max — governs — detail):");
   for (const k of m.kutas) {
@@ -398,10 +485,13 @@ function matchToText(m) {
       `${p.selfCancellations.length ? "; mitigators: " + p.selfCancellations.join("; ") : ""}`;
     L.push("");
     L.push(`Manglik / Mangal dosha: ${mk.verdict.label}`);
-    L.push(one("Groom", mk.boy));
-    L.push(one("Bride", mk.girl));
+    L.push(one(m.symmetric ? m.a.nakshatra : "Groom", mk.boy));
+    L.push(one(m.symmetric ? m.b.nakshatra : "Bride", mk.girl));
   }
   return L.join("\n");
 }
 
-module.exports = { computeGunaMilan, moonInputFromChart, computeManglik, manglikVerdict, matchToText };
+module.exports = {
+  computeGunaMilan, computeGunaMilanSymmetric, moonInputFromChart,
+  computeManglik, manglikVerdict, matchToText
+};

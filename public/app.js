@@ -199,6 +199,13 @@ function setFormOpen(open) {
 function fillBirthForm(b) {
   if (!b) return;
   $("name").value = b.name && b.name !== "Unnamed" ? b.name : "";
+  // Gender comes from the account, not the cached birth, which predates the
+  // field. It matters that this resets: loadPerson() puts the saved person's
+  // gender in the select, and this is the path that reclaims the form as
+  // yours — without it, "edit my birth details" would offer to save their
+  // gender as your own, which is the exact trap the name/date fields already
+  // guard against.
+  if ($("gender")) $("gender").value = (myAccount && myAccount.gender) || b.gender || "";
   $("dob").value = `${b.year}-${pad(b.month)}-${pad(b.day)}`;
   $("tob").value = `${pad(b.hour)}:${pad(b.minute)}`;
   $("lat").value = b.lat;
@@ -286,6 +293,7 @@ form.addEventListener("submit", async e => {
 
   lastInput = {
     name: $("name").value.trim(),
+    gender: ($("gender") || {}).value || "",
     year, month, day, hour, minute,
     lat: $("lat").value, lon: $("lon").value, tz: $("tz").value
   };
@@ -330,7 +338,11 @@ async function createInvite() {
     const res = await fetch("/api/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...mine, role: roleEl ? roleEl.value : "groom" })
+      body: JSON.stringify({
+        ...mine,
+        gender: (myAccount && myAccount.gender) || "",
+        role: roleEl ? roleEl.value : "groom"
+      })
     });
     if (res.status === 401) return showAuth();
     const data = await res.json();
@@ -423,6 +435,11 @@ async function loadAccount() {
     if (!res.ok) return null;
     myAccount = await res.json();
     renderSoulId();
+    // The stored answer beats whatever the blank form defaults to, and it
+    // decides whether the match form still has to ask for a role.
+    const sel = $("gender");
+    if (sel && myAccount.gender) sel.value = myAccount.gender;
+    syncRoleToggle();
     return myAccount;
   } catch (_) {
     return null;
@@ -655,8 +672,38 @@ function saveMyBirth(input) {
   fetch("/api/account/birth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...input, role: role === "bride" ? "bride" : "groom" })
+    // Gender is the answer; role is only what the kutas index on, and the
+    // server derives it from gender whenever gender settles it.
+    body: JSON.stringify({ ...input, gender: input.gender || "", role: role === "bride" ? "bride" : "groom" })
+  }).then(() => {
+    if (myAccount) myAccount.gender = input.gender || null;
+    syncRoleToggle();
   }).catch(() => { /* stays local until the next successful save */ });
+}
+
+// Mirrors roleFromGender/roleIsImplied in server/gender.js — the client can't
+// require() it, so if that rule changes, change it here too. The server is
+// still the authority; this only decides whether to bother asking.
+function impliedRole(gender) {
+  if (gender === "male") return "groom";
+  if (gender === "female") return "bride";
+  return null; // "other", or never answered — the toggle has to ask
+}
+
+// Stop asking "are you the guy or the girl?" on every comparison when the
+// profile already says. Kept visible for "other" and for older accounts,
+// because Guna Milan still needs one of each until the kutas score both ways.
+function syncRoleToggle() {
+  const role = impliedRole(myAccount && myAccount.gender);
+  for (const [id, name] of [["roleToggle", "primaryRole"], ["inviteRoleToggle", "inviteRole"]]) {
+    const toggle = $(id);
+    if (!toggle) continue;
+    if (role) {
+      const radio = document.querySelector(`input[name="${name}"][value="${role}"]`);
+      if (radio) radio.checked = true;
+    }
+    toggle.hidden = !!role;
+  }
 }
 
 // The invite link always encodes your own birth, so the box needs a stored
@@ -690,7 +737,9 @@ async function restoreMyChart(serverBirth) {
   const mine = serverBirth || loadMyBirth();
   if (!mine) return false;
   if (serverBirth) cacheMyBirth(serverBirth); // cache, don't POST it back
-  lastInput = mine;
+  // The stored birth predates gender and doesn't carry it, so re-attach it from
+  // the account — otherwise the next "save current" would drop the answer.
+  lastInput = { ...mine, gender: (myAccount && myAccount.gender) || mine.gender || "" };
   const ok = await castChart(mine, true);
   if (ok) setViewing(null);
   return ok;
@@ -1379,12 +1428,16 @@ matchForm.addEventListener("submit", async e => {
   const [year, month, day] = dob.split("-").map(Number);
   const [hour, minute] = tob.split(":").map(Number);
   const partner = {
+    gender: ($("m_gender") || {}).value || "",
     year, month, day, hour, minute,
     lat: $("m_lat").value, lon: $("m_lon").value, tz: $("m_tz").value
   };
 
-  // The kutas are boy→girl directional, so map by the primary chart's role.
-  const role = document.querySelector('input[name="primaryRole"]:checked').value;
+  // The kutas are boy→girl directional, so map by the primary chart's role —
+  // taken from the profile gender where that settles it, and from the toggle
+  // (which is only on screen in that case) where it doesn't.
+  const role = impliedRole(myAccount && myAccount.gender)
+    || document.querySelector('input[name="primaryRole"]:checked').value;
   const boy = role === "groom" ? lastInput : partner;
   const girl = role === "groom" ? partner : lastInput;
 
@@ -1437,19 +1490,22 @@ function renderMatchResult(d) {
     .join("");
 
   const badges = [];
-  if (d.doshas.nadi) badges.push('<span class="dosha-badge">Nadi dosha</span>');
-  if (d.doshas.bhakoot) badges.push('<span class="dosha-badge">Bhakoot dosha</span>');
-  if (!badges.length) badges.push('<span class="dosha-badge ok">No Nadi / Bhakoot dosha</span>');
+  if (d.doshas.nadi) badges.push('<span class="dosha-badge"><span class="badge-icon">⚠</span> Nadi dosha</span>');
+  if (d.doshas.bhakoot) badges.push('<span class="dosha-badge"><span class="badge-icon">⚠</span> Bhakoot dosha</span>');
+  if (!badges.length) badges.push('<span class="dosha-badge ok"><span class="badge-icon">✓</span> No Nadi / Bhakoot dosha</span>');
 
   const caveats = (d.verdict.caveats || []).map(c => `<li>${c}</li>`).join("");
-  const manglikHtml = d.manglik ? renderManglik(d.manglik) : "";
+  const manglikHtml = d.manglik ? renderManglik(d.manglik, d, d.symmetric) : "";
 
   matchResult.innerHTML = `
     <div class="ship-banner ${band}">
-      <span class="ship-emoji">${ship.emoji}</span>
+      <div class="ship-emoji-wrap"><span class="ship-emoji">${ship.emoji}</span></div>
       <div class="ship-text">
-        <div class="ship-title">${ship.head}</div>
-        <div class="ship-sub">${fmtScore(d.total)}/${d.max} · ${pct}% matched — ${ship.sub}</div>
+        <div class="ship-header">
+          <span class="ship-title">${ship.head}</span>
+          <span class="ship-pct-badge">${pct}% match</span>
+        </div>
+        <div class="ship-sub">${fmtScore(d.total)}/${d.max} gunas · ${ship.sub}</div>
       </div>
     </div>
     <div class="score-head">
@@ -1457,20 +1513,33 @@ function renderMatchResult(d) {
         <div class="score-inner"><b>${fmtScore(d.total)}</b><span>/${d.max}</span></div>
       </div>
       <div class="score-meta">
-        <div class="verdict ${band}">${d.verdict.label}</div>
+        <div class="verdict-pill ${band}">${d.verdict.label}</div>
         <div class="pair">
-          <span>♂ <b>${d.boy.nakshatra}</b> <small>${d.boy.sign}</small></span>
-          <span>♀ <b>${d.girl.nakshatra}</b> <small>${d.girl.sign}</small></span>
+          <div class="pair-row">
+            <span class="pair-symbol">${d.symmetric ? "✦" : "♂"}</span>
+            <span class="pair-nakshatra">${d.boy.nakshatra}</span>
+            <span class="pair-sign">${d.boy.sign}</span>
+          </div>
+          <div class="pair-row">
+            <span class="pair-symbol">${d.symmetric ? "✦" : "♀"}</span>
+            <span class="pair-nakshatra">${d.girl.nakshatra}</span>
+            <span class="pair-sign">${d.girl.sign}</span>
+          </div>
         </div>
         <div class="dosha-badges">${badges.join("")}</div>
       </div>
     </div>
     <div class="match-actions">
-      <button type="button" id="shipShareBtn" class="ship-share">Share this ✦</button>
-      <button type="button" id="askMatchBtn" class="ask-match">Talk it through →</button>
+      <button type="button" id="shipShareBtn" class="ship-share">
+        <span>Share this</span> <span class="btn-icon">✦</span>
+      </button>
+      <button type="button" id="askMatchBtn" class="ask-match">
+        <span>Talk it through</span> <span class="btn-icon">→</span>
+      </button>
     </div>
     <button type="button" class="breakdown-toggle" id="breakdownToggle" aria-expanded="false">
-      <span class="bd-label">see the breakdown</span><span class="bd-caret">▼</span>
+      <span class="bd-label">see the breakdown</span>
+      <span class="bd-caret">▼</span>
     </button>
     <div class="ship-breakdown" id="shipBreakdown" hidden>
       <table class="kuta-table"><tbody>${kutaRows}</tbody></table>
@@ -1491,6 +1560,7 @@ function renderMatchResult(d) {
       const open = bd.hidden;
       bd.hidden = !open;
       bdToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      bdToggle.classList.toggle("is-open", open);
       const caret = bdToggle.querySelector(".bd-caret");
       if (caret) caret.textContent = open ? "▲" : "▼";
       const label = bdToggle.querySelector(".bd-label");
@@ -1511,8 +1581,10 @@ function renderMatchResult(d) {
   }
 }
 
-// Manglik (Mangal dosha) panel: mutual/one-sided verdict plus each partner's status.
-function renderManglik(mk) {
+// Manglik (Mangal dosha) panel: mutual/one-sided verdict plus each partner's
+// status. `symmetric` drops the groom/bride captions for a couple that was
+// scored without those roles — the nakshatra names identify them instead.
+function renderManglik(mk, pair, symmetric) {
   const v = mk.verdict;
   const person = (who, m) => {
     const detail = m.manglik
@@ -1530,8 +1602,8 @@ function renderManglik(mk) {
   return `<div class="manglik mk-${v.status}">
       <div class="aspects-title">Manglik · Mangal dosha</div>
       <div class="mk-verdict">${v.label}</div>
-      ${person("♂ Groom", mk.boy)}
-      ${person("♀ Bride", mk.girl)}
+      ${person(symmetric ? `✦ ${pair.boy.nakshatra}` : "♂ Groom", mk.boy)}
+      ${person(symmetric ? `✦ ${pair.girl.nakshatra}` : "♀ Bride", mk.girl)}
     </div>`;
 }
 
@@ -2135,6 +2207,7 @@ peopleList.addEventListener("click", async e => {
 
 function loadPerson(p) {
   $("name").value = p.name === "Unnamed" ? "" : p.name;
+  if ($("gender")) $("gender").value = p.gender || "";
   $("dob").value = `${p.year}-${pad(p.month)}-${pad(p.day)}`;
   $("tob").value = `${pad(p.hour)}:${pad(p.minute)}`;
   $("lat").value = p.lat;
@@ -2147,6 +2220,7 @@ function loadPerson(p) {
   // leave the (required) name field empty, which would fail form validation.
   lastInput = {
     name: $("name").value.trim(),
+    gender: p.gender || "",
     year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute,
     lat: p.lat, lon: p.lon, tz: p.tz
   };

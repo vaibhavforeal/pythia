@@ -45,6 +45,7 @@ const fromUserRow = r => (r ? {
   soulId: r.soul_id ?? r.soulId ?? null,
   soulIdAt: r.soul_id_at ?? r.soulIdAt ?? null,
   birthRole: r.birth_role ?? r.birthRole ?? null,
+  gender: r.gender ?? null,
   createdAt: r.created_at ?? r.createdAt ?? null
 } : r);
 
@@ -63,7 +64,7 @@ const fromInviteRow = r => ({
 // object on the JSON backend, so `person.userId` was defined in dev and
 // undefined in production. Normalising means one shape whichever backend runs.
 const fromPersonRow = r => ({
-  id: r.id, userId: r.user_id, name: r.name,
+  id: r.id, userId: r.user_id, name: r.name, gender: r.gender ?? null,
   year: r.year, month: r.month, day: r.day, hour: r.hour, minute: r.minute,
   lat: r.lat, lon: r.lon, tz: r.tz, createdAt: r.created_at
 });
@@ -123,6 +124,7 @@ function supabaseBackend(url, key) {
           phone: user.phone || null, phone_verified: !!user.phoneVerified,
           soul_id: user.soulId || null, soul_id_at: user.soulIdAt || null,
           birth: user.birth || null, birth_role: user.birthRole || null,
+          gender: user.gender || null,
           created_at: user.createdAt
         });
         if (error) throw error;
@@ -140,6 +142,7 @@ function supabaseBackend(url, key) {
         if (patch.soulIdAt !== undefined) upd.soul_id_at = patch.soulIdAt;
         if (patch.birth !== undefined) upd.birth = patch.birth;
         if (patch.birthRole !== undefined) upd.birth_role = patch.birthRole;
+        if (patch.gender !== undefined) upd.gender = patch.gender;
         const { error } = await sb.from("users").update(upd).eq("id", id);
         if (error) throw error;
         return true;
@@ -394,7 +397,7 @@ function supabaseBackend(url, key) {
       },
       async add(person) {
         const { error } = await sb.from("people").insert({
-          id: person.id, user_id: person.userId, name: person.name,
+          id: person.id, user_id: person.userId, name: person.name, gender: person.gender || null,
           year: person.year, month: person.month, day: person.day, hour: person.hour, minute: person.minute,
           lat: person.lat, lon: person.lon, tz: person.tz, created_at: person.createdAt
         });

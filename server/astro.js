@@ -235,7 +235,13 @@ function computeChart(input) {
 
   // Synthesis reads the rashi, the navamsa, the divisionals and the dasha, so
   // it has to run after all four exist.
-  const synthesis = computeSynthesis({ ascendant, planets, navamsa, divisionals, dasha });
+  // The kalatra-karaka is Venus for a man and Jupiter for a woman, so the
+  // synthesis needs the gender to read the spouse from the right planet. Absent
+  // it, that one reading is simply omitted rather than guessed.
+  const synthesis = computeSynthesis(
+    { ascendant, planets, navamsa, divisionals, dasha },
+    input.gender
+  );
 
   const nowMs = Date.now();
   const transits = computeTransits(moon.signIndex, ascSign, nowMs);
@@ -284,6 +290,16 @@ function chartToText(c) {
       `Lagna lord condition: ${l.key} in the ${ord(l.house)} house, ${l.dignity}` +
         `${l.combust ? ", combust" : ""} — ${l.band.toUpperCase()}. ` +
         `This is the baseline for how much the native can act on anything below.`
+    );
+  }
+
+  if (c.synthesis && c.synthesis.marriageKaraka) {
+    const mk = c.synthesis.marriageKaraka;
+    const one = p =>
+      `${p.key} in the ${ord(p.house)} house, ${p.dignity}${p.combust ? ", combust" : ""} — ${p.band.toUpperCase()}`;
+    L.push(
+      `Kalatra-karaka (spouse significator): ${mk.planets.map(one).join("; ")}. ${mk.why}.` +
+        (mk.ambiguous ? " Weigh both; do not assert one as the karaka." : "")
     );
   }
 

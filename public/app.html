@@ -103,7 +103,7 @@
         <div class="invite-box" id="inviteBox" data-pane="friends" hidden>
           <div class="aspects-title">Invite a friend</div>
           <p class="invite-hint">Send a link — they drop their birth details, you both get the score. No account needed on their side.</p>
-          <div class="role-toggle role-mini">
+          <div class="role-toggle role-mini" id="inviteRoleToggle">
             <span>you're the</span>
             <label><input type="radio" name="inviteRole" value="groom" checked /> guy ♂</label>
             <label><input type="radio" name="inviteRole" value="bride" /> girl ♀</label>
@@ -165,11 +165,22 @@
           <h3>♡ Ship check</h3>
           <p class="ship-blurb">will it actually work? drop their birth deets and find out.</p>
           <form id="matchForm" class="match-form">
-            <div class="role-toggle">
+            <!-- Hidden once your profile gender settles which side of the kutas
+                 you sit on; app.js reveals it again when it can't tell. -->
+            <div class="role-toggle" id="roleToggle">
               <span>you're the</span>
               <label><input type="radio" name="primaryRole" value="groom" checked /> guy ♂</label>
               <label><input type="radio" name="primaryRole" value="bride" /> girl ♀</label>
             </div>
+
+            <label>their gender
+              <select id="m_gender">
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
 
             <label>their birthday
               <input type="date" id="m_dob" required />
@@ -228,6 +239,16 @@
           <label>Name
             <input type="text" id="name" maxlength="80" placeholder="e.g. Vaibhav" autocomplete="off" required />
             <small>For name numerology &amp; saving your charts.</small>
+          </label>
+
+          <label>Gender
+            <select id="gender">
+              <option value="">Prefer not to say</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+            <small>Some classical readings differ by gender — the marriage karaka is Venus for men, Jupiter for women.</small>
           </label>
 
           <label>Birthday

@@ -67,6 +67,11 @@ alter table public.users add column if not exists streak_longest integer not nul
 alter table public.users add column if not exists streak_last    text;
 alter table public.users add column if not exists streak_days    integer not null default 0;
 
+-- Gender of the native: 'male', 'female' or 'other'. Nullable on purpose —
+-- accounts created before this column existed never answered, and that has to
+-- stay distinguishable from an answer (see server/gender.js).
+alter table public.users add column if not exists gender text;
+
 -- Unique on email/google_id only where present (multiple NULLs stay allowed).
 create unique index if not exists idx_users_email     on public.users(email)     where email     is not null;
 create unique index if not exists idx_users_google_id on public.users(google_id) where google_id is not null;
@@ -82,6 +87,10 @@ create table if not exists public.people (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_people_user on public.people(user_id);
+
+-- Saved people carry a gender too, so a match against someone already on your
+-- list doesn't have to re-ask which side of the kutas they sit on.
+alter table public.people add column if not exists gender text;
 
 -- Saved chat conversations. chart/match/messages are stored as JSONB so a chat
 -- can be resumed with its full context without recomputing the chart.
