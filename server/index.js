@@ -14,6 +14,7 @@ const {
   SKILL_PROMPT, BEHAVIOUR_NOTE, CARE_NOTE, MATCH_NOTE, REGISTER_NOTE, NERD_NOTE
 } = require("./prompts");
 const { parseBirth, chartForUser, HttpError } = require("./birth");
+const voice = require("./voice");
 const { CITIES } = require("./cities");
 const auth = require("./auth");
 const oauth = require("./oauth");
@@ -1643,6 +1644,13 @@ app.post("/api/chat", chatBurstLimit, chatDailyLimit, async (req, res) => {
   }
 });
 
+// --- Voice ------------------------------------------------------------------
+// Registered here so /api/voice/* lands inside the auth gate above and inherits
+// requireAuth, checkOrigin and appCors with no new auth code. The module owns
+// its own limits and holds the Azure credentials; nothing about a call is
+// negotiable from the client side. Off unless VOICE_ENABLED is set.
+voice.routes(app);
+
 const round4 = x => Math.round(Number(x) * 10000) / 10000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 529]); // transient upstream errors
@@ -1800,6 +1808,14 @@ app.listen(PORT, () => {
   }
   if (!auth.SECURE) {
     console.log("  ℹ  COOKIE_SECURE is off (fine for http://localhost; set it to true behind HTTPS).");
+  }
+  if (voice.ENABLED && !voice.configured()) {
+    console.log(
+      "  ⚠  VOICE_ENABLED is true but voice is not configured — needs a reachable " +
+        "AZURE_INFERENCE_ENDPOINT, a key, and VOICE_DEPLOYMENT. Calls will 503."
+    );
+  } else if (voice.ENABLED) {
+    console.log(`  🎙 Voice calls ON — ${voice.MINUTES_PER_DAY} min/user/day, ${voice.MAX_SESSION_SEC}s max per call.`);
   }
   console.log("");
 });

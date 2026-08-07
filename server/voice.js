@@ -235,6 +235,374 @@ function configured() {
   return Boolean(ENABLED && voiceHost() && KEY && DEPLOYMENT);
 }
 
+// --- Limits ------------------------------------------------------------------
+// Voice bills by the minute, and an open socket keeps billing whether or not
+// anyone is talking. So the limits are layered by how they FAIL, not by size.
+//
+// The persistent daily budget fails OPEN by design (see auth.persistentRate-
+// Limiter) — correct for chat, which is about to hit the same store anyway, and
+// dangerous for a metered realtime API. The last three below need no store and
+// no network, so a database outage can leak at most
+// VOICE_MAX_CONCURRENT × VOICE_MAX_SESSION_SEC of billable time.
+const MINUTES_PER_DAY = Number(process.env.VOICE_MINUTES_PER_DAY) || 10;
+const MAX_SESSION_SEC = Number(process.env.VOICE_MAX_SESSION_SEC) || 600;
+const IDLE_SEC = Number(process.env.VOICE_IDLE_SEC) || 45;
+const STARTS_PER_HOUR = Number(process.env.VOICE_STARTS_PER_HOUR) || 6;
+const MAX_CONCURRENT = Number(process.env.VOICE_MAX_CONCURRENT) || 2;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Pilot gate. Empty means "everyone who passes the other limits".
+const ALLOWLIST = String(process.env.VOICE_ALLOWLIST || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
+const allowed = userId => !ALLOWLIST.length || ALLOWLIST.includes(String(userId));
+
+// --- Live sessions -----------------------------------------------------------
+// In-memory → single-instance only, exactly like auth.rateLimiter. Correct on
+// Render's single container; the day this runs on two, a call started on one
+// instance cannot be ended or metered by the other.
+const _sessions = new Map();
+
+const countFor = userId => {
+  let n = 0;
+  for (const s of _sessions.values()) if (s.userId === userId) n++;
+  return n;
+};
+
+// --- Transcripts -------------------------------------------------------------
+// The spike found these arrive on the control socket, not only on the browser's
+// data channel — so they are server-observed rather than client-supplied, and a
+// voice call can be persisted without trusting anything the page sends.
+//
+// Pure and exported so the mapping can be tested without a call.
+function toConversationMessages(events) {
+  const out = [];
+  const seen = new Set();
+  for (const e of events || []) {
+    if (!e || seen.has(e.itemId)) continue;
+    const content = String(e.transcript == null ? "" : e.transcript).trim();
+    // VAD false positives produce empty transcripts constantly.
+    if (!content) continue;
+    if (e.role !== "user" && e.role !== "assistant") continue;
+    if (e.itemId) seen.add(e.itemId);
+    out.push({ role: e.role, content: content.slice(0, 4000), source: "voice" });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
+// --- Routes ------------------------------------------------------------------
+function routes(app) {
+  const auth = require("./auth");
+  const store = require("./store");
+  const crypto = require("node:crypto");
+  const { chartFromBirth } = require("./birth");
+  const { users, people, conversations } = store;
+
+  // One start per minute-zero charge. Reused verbatim rather than reimplemented,
+  // so the daily budget shares the store semantics the chat cap already has.
+  const minuteBudget = auth.persistentRateLimiter({
+    windowMs: DAY_MS,
+    max: MINUTES_PER_DAY,
+    key: req => req.userId,
+    prefix: "voice-min",
+    message: "You've used today's voice minutes. Text chat is still open."
+  });
+
+  const startBurst = auth.rateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: STARTS_PER_HOUR,
+    key: req => req.userId,
+    message: "Too many calls started — give it a few minutes."
+  });
+
+  /** Charge one minute. Returns false when the day's budget is spent. */
+  async function chargeMinute(userId) {
+    try {
+      const rec = await store.rateLimits.hit(`voice-min:${userId}`, DAY_MS);
+      return rec.count <= MINUTES_PER_DAY;
+    } catch (err) {
+      // Fails open like the middleware it mirrors — the hard timers below are
+      // what actually bound the damage.
+      console.error("voice: minute meter unavailable:", err.message);
+      return true;
+    }
+  }
+
+  async function minutesLeft(userId) {
+    try {
+      // hit() has no read-only mode, so derive from the last known charge
+      // rather than incrementing to find out.
+      const s = [..._sessions.values()].find(x => x.userId === userId);
+      return s ? Math.max(0, MINUTES_PER_DAY - s.minutesCharged) : MINUTES_PER_DAY;
+    } catch (_) {
+      return MINUTES_PER_DAY;
+    }
+  }
+
+  function endSession(id, reason) {
+    const s = _sessions.get(id);
+    if (!s) return;
+    clearTimeout(s.hardTimer);
+    clearTimeout(s.idleTimer);
+    clearInterval(s.minuteTimer);
+    try { s.ws.close(); } catch (_) { /* already closing */ }
+    _sessions.delete(id);
+
+    const dur = Math.round((Date.now() - s.startedAt) / 1000);
+    // Wall clock, not tokens: under BYOM the usage field carries audio tokens
+    // only and Claude's are never reported here. Ground truth for spend is
+    // Azure Cost Management, filtered on the session metadata. This line is
+    // observability, not a bill.
+    console.log(
+      `  🎙 voice: user=${String(s.userId).slice(0, 8)} dur=${dur}s turns=${s.turns} ` +
+      `tools=${s.toolCalls} charged=${s.minutesCharged}min end=${reason}`
+    );
+
+    // Written once, at the end. Per-turn writes during a live call add latency
+    // and failure modes and buy nothing; the cost is that a hard crash loses
+    // the transcript, which is worth saying out loud rather than hiding.
+    const messages = toConversationMessages(s.transcript);
+    if (!messages.length) return;
+    const first = messages.find(m => m.role === "user");
+    const now = new Date().toISOString();
+    conversations.create({
+      id: crypto.randomUUID(),
+      userId: s.userId,
+      title: ("🎙 " + (first ? first.content : "Voice call")).slice(0, 120),
+      chart: s.chart,        // the SERVER's chart, so continuing in text inherits the grounding
+      input: s.chart.input || null,
+      match: null,
+      messages,
+      createdAt: now,
+      updatedAt: now
+    }).catch(err => console.error("voice: could not save transcript:", err.message));
+  }
+
+  function armTimers(s) {
+    // Three timers because they catch three different failures. All unref'd,
+    // matching the cleanup intervals in auth.js.
+    s.hardTimer = setTimeout(() => endSession(s.id, "max-duration"), MAX_SESSION_SEC * 1000).unref();
+    s.minuteTimer = setInterval(async () => {
+      s.minutesCharged++;
+      if (!(await chargeMinute(s.userId))) endSession(s.id, "budget");
+    }, 60_000).unref();
+    bumpIdle(s);
+  }
+
+  function bumpIdle(s) {
+    clearTimeout(s.idleTimer);
+    // Catches a tab closed without /end — otherwise a metered session runs on.
+    s.idleTimer = setTimeout(() => endSession(s.id, "idle"), IDLE_SEC * 1000).unref();
+  }
+
+  /** Open the upstream control socket and exchange SDP. Resolves to the answer. */
+  function connectUpstream(s, sdpOffer) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(signallingUrl());
+      s.ws = ws;
+      const settle = setTimeout(() => reject(new Error("no sdp answer in 20s")), 20_000);
+
+      ws.addEventListener("open", () => {
+        ws.send(JSON.stringify({
+          type: "rtc.call.sdp.create",
+          sdp_offer: sdpOffer,
+          session: buildSessionConfig({
+            chart: s.chart,
+            voice: s.voice,
+            sessionId: s.id,
+            // Hashed: this lands in Microsoft's resource logs.
+            userHash: crypto.createHash("sha256").update(String(s.userId)).digest("hex").slice(0, 16)
+          })
+        }));
+      });
+
+      ws.addEventListener("message", ev => {
+        // Wrapped, because a throw here becomes an unhandled rejection that
+        // index.js only logs — and the call would hang forever with the model
+        // waiting on a tool result that never comes.
+        try {
+          const evt = JSON.parse(ev.data);
+          bumpIdle(s);
+
+          switch (evt.type) {
+            case "rtc.call.sdp.created":
+            case "rtc.call.sdp.answer":
+              clearTimeout(settle);
+              resolve(evt.sdp_answer || evt.sdp || evt.answer);
+              break;
+
+            case "conversation.item.input_audio_transcription.completed":
+              s.turns++;
+              s.transcript.push({ role: "user", itemId: evt.item_id, transcript: evt.transcript });
+              break;
+
+            case "response.audio_transcript.done":
+              s.transcript.push({ role: "assistant", itemId: evt.item_id, transcript: evt.transcript });
+              break;
+
+            case "rtc.call.error":
+            case "error":
+              console.error("voice: upstream error:", JSON.stringify(evt.error || evt).slice(0, 300));
+              clearTimeout(settle);
+              reject(new Error("upstream refused the call"));
+              break;
+
+            default: {
+              // The docs disagree about which event carries a tool call on the
+              // control channel, so handle both and dedupe by call_id.
+              const isCall =
+                evt.type === "response.function_call_arguments.done" ||
+                (evt.type === "response.output_item.done" && evt.item && evt.item.type === "function_call");
+              if (!isCall) break;
+
+              const item = evt.item || evt;
+              const callId = item.call_id || evt.call_id;
+              if (!callId || s.seenCalls.has(callId)) break;
+              s.seenCalls.add(callId);
+
+              // A model looping on a tool it cannot satisfy would burn the budget.
+              if (++s.toolCalls > 30) break;
+
+              const output = handleToolCall(s.chart, item.name || evt.name, item.arguments ?? evt.arguments);
+              ws.send(JSON.stringify({
+                type: "conversation.item.create",
+                item: { type: "function_call_output", call_id: callId, output }
+              }));
+              ws.send(JSON.stringify({ type: "response.create" }));
+            }
+          }
+        } catch (err) {
+          console.error("voice: control handler threw:", err);
+        }
+      });
+
+      ws.addEventListener("close", () => {
+        clearTimeout(settle);
+        if (_sessions.has(s.id)) endSession(s.id, "upstream-closed");
+        reject(new Error("control socket closed"));
+      });
+      ws.addEventListener("error", () => { /* close follows, handled there */ });
+    });
+  }
+
+  /**
+   * Every refusal, and the chart load, BEFORE a single minute is charged.
+   *
+   * This ordering is the point. With the budget middleware in front, a request
+   * with no SDP — or from someone who never saved their birth details — spent a
+   * paid minute to be told 400. Nothing here costs anything, so all of it runs
+   * first and the meter only sees requests that were going to become a call.
+   *
+   * Nothing below may echo the instructions, the chart text, the API key or the
+   * Azure URL. A test asserts that on every error path.
+   */
+  async function preflight(req, res, next) {
+    if (!configured()) {
+      return res.status(503).json({ error: "Voice calls aren't switched on." });
+    }
+    if (typeof WebSocket === "undefined") {
+      console.error("voice: this Node has no global WebSocket (needs >= 22)");
+      return res.status(503).json({ error: "Voice calls aren't available on this server." });
+    }
+    if (!allowed(req.userId)) {
+      return res.status(503).json({ error: "Voice calls aren't open to your account yet." });
+    }
+
+    const { sdp, personId } = req.body || {};
+    if (!sdp || typeof sdp !== "string") {
+      return res.status(400).json({ error: "Missing the connection offer." });
+    }
+
+    // Fail-closed, no store involved: the backstop behind the budget, and the
+    // reason a store outage can only leak MAX_CONCURRENT × MAX_SESSION_SEC.
+    if (_sessions.size >= MAX_CONCURRENT) {
+      return res.status(503).json({ error: "Too many calls in progress. Try again shortly." });
+    }
+    if (countFor(req.userId) >= 1) {
+      return res.status(409).json({ error: "You're already on a call." });
+    }
+
+    // THE GUARDRAIL. The chart is loaded here, from the store, for this user —
+    // never accepted from the request. The instructions are built from it and
+    // the client never sees nor supplies them.
+    let chart = null;
+    try {
+      if (personId) {
+        const list = await people.forUser(req.userId);
+        const p = list.find(x => x.id === personId);
+        if (p) chart = chartFromBirth(p);
+      } else {
+        const u = await users.findById(req.userId);
+        if (u) chart = chartFromBirth(u.birth);
+      }
+    } catch (err) {
+      console.error("voice: chart load failed:", err.message);
+    }
+    if (!chart) {
+      // An ungrounded call is the exact failure this feature exists to prevent.
+      return res.status(503).json({ error: "Save your birth details first, then we can talk." });
+    }
+
+    req.voiceChart = chart;
+    next();
+  }
+
+  app.post("/api/voice/session", startBurst, preflight, minuteBudget, async (req, res) => {
+    const { sdp, voice } = req.body || {};
+    const chart = req.voiceChart;
+
+    const s = {
+      id: crypto.randomUUID(),
+      userId: req.userId,
+      chart,
+      voice: resolveVoice(voice),
+      ws: null,
+      startedAt: Date.now(),
+      minutesCharged: 1,   // minuteBudget above already charged minute zero
+      transcript: [],
+      seenCalls: new Set(),
+      turns: 0,
+      toolCalls: 0
+    };
+    _sessions.set(s.id, s);
+
+    try {
+      const sdpAnswer = await connectUpstream(s, sdp);
+      armTimers(s);
+      res.json({
+        sessionId: s.id,
+        sdpAnswer,
+        maxSeconds: MAX_SESSION_SEC,
+        heartbeatSeconds: Math.max(5, Math.floor(IDLE_SEC / 3)),
+        minutesLeft: Math.max(0, MINUTES_PER_DAY - s.minutesCharged)
+      });
+    } catch (err) {
+      endSession(s.id, "connect-failed");
+      console.error("voice: could not start call:", err.message);
+      res.status(502).json({ error: "Couldn't connect the call. Please try again." });
+    }
+  });
+
+  app.post("/api/voice/session/:id/heartbeat", async (req, res) => {
+    const s = _sessions.get(req.params.id);
+    if (!s || s.userId !== req.userId) return res.status(404).json({ ended: true, reason: "gone" });
+    bumpIdle(s);
+    const elapsed = Math.round((Date.now() - s.startedAt) / 1000);
+    res.json({
+      ok: true,
+      secondsLeft: Math.max(0, MAX_SESSION_SEC - elapsed),
+      minutesLeft: Math.max(0, MINUTES_PER_DAY - s.minutesCharged)
+    });
+  });
+
+  app.post("/api/voice/session/:id/end", async (req, res) => {
+    const s = _sessions.get(req.params.id);
+    if (!s || s.userId !== req.userId) return res.json({ ok: true });
+    endSession(s.id, "user");
+    res.json({ ok: true });
+  });
+}
+
 module.exports = {
   ENABLED,
   API_VERSION,
@@ -243,10 +611,17 @@ module.exports = {
   DEFAULT_VOICE,
   VOICE_TOOL,
   MAX_INSTRUCTION_BYTES,
+  MINUTES_PER_DAY,
+  MAX_SESSION_SEC,
+  IDLE_SEC,
+  MAX_CONCURRENT,
   resolveVoice,
   handleToolCall,
   voiceInstructions,
   buildSessionConfig,
+  toConversationMessages,
   signallingUrl,
-  configured
+  configured,
+  routes,
+  _sessions
 };

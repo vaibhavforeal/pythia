@@ -23,6 +23,47 @@ services:
         sync: false          # set in the dashboard (not committed)
       - key: AZURE_INFERENCE_KEY
         sync: false
+      # --- Voice calls (Azure Voice Live, BYOM Claude) — OFF by default -------
+      # Everything below is inert until VOICE_ENABLED is "true". Kept off
+      # deliberately: a realtime session is metered in MINUTES, not requests, and
+      # an idle open socket keeps billing. BYOM is not covered by the published
+      # Voice Live tier table, so the per-minute rate for this combination is
+      # only knowable by making a call and reading Azure Cost Management.
+      #
+      # Before switching this on, ALL of these must be true:
+      #   1. VOICE_DEPLOYMENT points at a FAST Claude deployment (haiku/sonnet).
+      #      Opus measured 1.7-2.5s to first audio, against a 1.5s bar — chat
+      #      keeps Opus, a call cannot.
+      #   2. The Foundry resource is in a Voice Live region (~10 of them).
+      #   3. A real call's cost has been measured, and MINUTES_PER_DAY set from
+      #      that number rather than from this guess.
+      #   4. The service is NOT on the free plan. Free spins down after 15 min
+      #      idle and takes ~50s to wake, so the first call of a quiet period
+      #      fails at the SDP exchange. WebRTC keeps audio off the server, so
+      #      Starter is enough — but free is not.
+      #   5. The care protocol has been walked through out loud (see
+      #      SPOKEN_CARE_ADDENDUM in server/prompts.js).
+      - key: VOICE_ENABLED
+        value: "false"
+      - key: VOICE_DEPLOYMENT
+        sync: false          # a fast Claude deployment; NOT the one chat uses
+      - key: VOICE_API_VERSION
+        value: "2026-01-01-preview"   # probed: the only version the /calls endpoint accepts
+      - key: VOICE_ALLOWLIST
+        sync: false          # comma-separated user ids for the pilot; empty = everyone
+      - key: VOICE_MINUTES_PER_DAY
+        value: "10"
+      - key: VOICE_MAX_SESSION_SEC
+        value: "600"
+      - key: VOICE_IDLE_SEC
+        value: "45"
+      - key: VOICE_STARTS_PER_HOUR
+        value: "6"
+      - key: VOICE_MAX_CONCURRENT
+        value: "2"
+      # VOICE_KEY and VOICE_ENDPOINT are deliberately absent — voice runs on the
+      # same Foundry resource as chat and reuses AZURE_INFERENCE_*. Set them only
+      # if the two ever move apart.
       - key: SUPABASE_URL
         sync: false          # Supabase → Settings → API → Project URL
       - key: SUPABASE_SERVICE_KEY
