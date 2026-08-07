@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pythia voice spike</title>
+<!--
+  Phase 0 spike page. Throwaway — public/voice.js is written from scratch, not
+  from this. Served by tools/voice-spike.js with the PRODUCTION CSP, so if
+  Content-Security-Policy blocks RTCPeerConnection we find out here rather than
+  in Phase 5.
+
+  The browser owns the media and the data channel. It never sees the Azure key,
+  the endpoint, or the instructions — those live in the Node process, which is
+  the shape server/voice.js will take.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #0b1220; color: #e2e8f0; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: #94a3b8; }
+  button { font: inherit; padding: 8px 18px; border-radius: 8px; border: 1px solid #0284c7;
+           background: #0284c7; color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: #7dd3fc; }
+  button[disabled] { opacity: .4; cursor: default; }
+  #state { margin: 16px 0; padding: 10px 14px; border-radius: 8px; background: #111c33;
+           border: 1px solid #1e293b; }
+  #state b { color: #7dd3fc; }
+  #caption { min-height: 3em; margin: 12px 0; padding: 10px 14px; border-radius: 8px;
+             background: #0f172a; border: 1px solid #1e293b; white-space: pre-wrap; }
+  #log { height: 46vh; overflow: auto; padding: 10px 14px; border-radius: 8px;
+         background: #060b16; border: 1px solid #1e293b; white-space: pre-wrap; font-size: 12px; }
+  .ok { color: #4ade80; } .warn { color: #fbbf24; } .err { color: #f87171; } .dim { color: #64748b; }
+</style>
+</head>
+<body>
+
+<h1>Pythia voice spike</h1>
+<p class="sub">Media goes browser&nbsp;↔&nbsp;Azure directly. Signalling and the API key stay on the server.</p>
+
+<button id="start">Start call</button>
+<button id="stop" class="ghost" disabled>Hang up</button>
+
+<div id="state">
+  connection <b id="conn">—</b> · ice <b id="ice">—</b> · datachannel <b id="dc">—</b> · <b id="turn">idle</b>
+</div>
+
+<div id="caption"></div>
+<div id="log"></div>
+
+<audio id="audio" autoplay playsinline></audio>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const logEl = $("log");
+  let pc = null, stream = null, dataChannel = null;
+
+  // Barge-in measurement (criterion 6): when the agent's audio last arrived,
+  // and when the service noticed the caller talking over it.
+  let speakingSince = 0;
+
+  function log(msg, cls) {
+    const t = new Date().toISOString().slice(11, 23);
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = `${t}  ${msg}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setTurn(s) { $("turn").textContent = s; }
+
+  async function start() {
+    $("start").disabled = true;
+    log("requesting microphone…");
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+    } catch (err) {
+      // Distinguish these two: "blocked" and "no microphone" need different
+      // instructions, and public/voice.js will need the same split.
+      log(`getUserMedia failed: ${err.name} — ${err.message}`, "err");
+      if (err.name === "NotAllowedError") log("permission denied — check the padlock in the address bar", "warn");
+      if (err.name === "NotFoundError") log("no microphone found", "warn");
+      $("start").disabled = false;
+      return;
+    }
+    log("microphone granted", "ok");
+
+    try {
+      pc = new RTCPeerConnection();
+    } catch (err) {
+      // The CSP question this page exists to answer.
+      log(`RTCPeerConnection threw: ${err.message} — likely CSP`, "err");
+      return;
+    }
+
+    pc.onconnectionstatechange = () => {
+      $("conn").textContent = pc.connectionState;
+      if (pc.connectionState === "connected") log("CRITERION 3 — peer connection established", "ok");
+      if (pc.connectionState === "failed") log("connection failed", "err");
+    };
+    pc.oniceconnectionstatechange = () => { $("ice").textContent = pc.iceConnectionState; };
+
+    pc.ontrack = ev => {
+      $("audio").srcObject = ev.streams[0];
+      log("remote audio track attached — CRITERION 4 is your ears", "ok");
+    };
+
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+    dataChannel = pc.createDataChannel("voice-live-events");
+    dataChannel.onopen = () => { $("dc").textContent = "open"; log("data channel open", "ok"); };
+    dataChannel.onclose = () => { $("dc").textContent = "closed"; };
+    dataChannel.onmessage = ev => onEvent(ev.data);
+
+    await pc.setLocalDescription(await pc.createOffer());
+
+    // Wait for ICE gathering, but never forever. A network with no reachable
+    // STUN server never fires the completion event, and without this escape the
+    // call hangs at "connecting" with no error. public/voice.js needs this too.
+    await new Promise(resolve => {
+      if (pc.iceGatheringState === "complete") return resolve();
+      const done = () => { clearTimeout(timer); pc.removeEventListener("icegatheringstatechange", check); resolve(); };
+      const check = () => { if (pc.iceGatheringState === "complete") done(); };
+      const timer = setTimeout(() => { log("ICE gathering timed out at 3s — proceeding", "warn"); done(); }, 3000);
+      pc.addEventListener("icegatheringstatechange", check);
+    });
+
+    log("posting SDP offer to the broker…");
+    let answer;
+    try {
+      const res = await fetch("/sdp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp })
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      answer = body.sdp;
+    } catch (err) {
+      log(`SDP exchange failed: ${err.message} — see the Node console`, "err");
+      return;
+    }
+
+    await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    log("SDP answer applied — start talking", "ok");
+    $("stop").disabled = false;
+    setTurn("listening");
+  }
+
+  function onEvent(raw) {
+    let evt;
+    try { evt = JSON.parse(raw); } catch { return log(`‹dc› unparseable: ${String(raw).slice(0, 120)}`, "warn"); }
+
+    switch (evt.type) {
+      case "input_audio_buffer.speech_started": {
+        setTurn("hearing you");
+        // If the agent was mid-sentence, this is barge-in. The gap between its
+        // last audio and this event is the number criterion 6 is asking for.
+        if (speakingSince) {
+          log(`CRITERION 6 — barge-in detected ${Date.now() - speakingSince}ms into the reply`, "ok");
+          speakingSince = 0;
+        }
+        break;
+      }
+      case "input_audio_buffer.speech_stopped":
+        setTurn("thinking");
+        break;
+
+      case "response.created":
+        setTurn("thinking");
+        break;
+
+      case "response.audio_transcript.delta":
+        if (!speakingSince) speakingSince = Date.now();
+        setTurn("speaking");
+        $("caption").textContent += evt.delta || "";
+        break;
+
+      case "response.audio_transcript.done":
+        // CRITERION 7 — if this only ever appears here and never in the Node
+        // console, transcripts must be relayed by the client in Phase 4.
+        log(`CRITERION 7 (browser) assistant transcript: ${JSON.stringify(evt.transcript || "").slice(0, 200)}`, "ok");
+        speakingSince = 0;
+        break;
+
+      case "conversation.item.input_audio_transcription.completed":
+        log(`CRITERION 7 (browser) caller transcript: ${JSON.stringify(evt.transcript || "").slice(0, 200)}`, "ok");
+        $("caption").textContent = "";
+        break;
+
+      case "response.done":
+        setTurn("listening");
+        speakingSince = 0;
+        // Under BYOM this carries audio tokens only; Claude's are reported
+        // separately. Logged as telemetry, never as a bill.
+        if (evt.response && evt.response.usage) log(`usage ${JSON.stringify(evt.response.usage)}`, "dim");
+        break;
+
+      case "error":
+        log(`‹dc› error ${JSON.stringify(evt.error || evt)}`, "err");
+        break;
+
+      default:
+        log(`‹dc› ${evt.type}`, "dim");
+    }
+  }
+
+  function stop() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (dataChannel) try { dataChannel.close(); } catch (_) {}
+    if (pc) try { pc.close(); } catch (_) {}
+    pc = stream = dataChannel = null;
+    setTurn("idle");
+    $("stop").disabled = true;
+    $("start").disabled = false;
+    log("hung up");
+  }
+
+  $("start").addEventListener("click", start);
+  $("stop").addEventListener("click", stop);
+  window.addEventListener("beforeunload", stop);
+
+  log("ready — press Start call", "dim");
+})();
+</script>
+</body>
+</html>
