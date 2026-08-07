@@ -456,4 +456,312 @@ function chartToText(c) {
   return L.join("\n");
 }
 
-module.exports = { computeChart, chartToText };
+// --- Spoken variants ---------------------------------------------------------
+// A realtime voice session has no equivalent of the Messages API's content-block
+// array, so there is no `cache_control` and no cached prefix: the ENTIRE
+// instruction string is re-sent to the model on every single turn. chartToText
+// runs ~8.5 KB, which across a twenty-turn call is most of the bill.
+//
+// So the spoken chart keeps what changes an answer and drops what a voice reply
+// would never say out loud. Degrees, the full varga tables and the ashtakavarga
+// grids are not omitted — they move behind chartDetail(), which the model must
+// call. That is cheaper AND safer: a number it has to ask for is a number it
+// cannot quietly invent.
+//
+// Deliberately a separate function rather than an option on chartToText.
+// chartToText is the sole grounding for the paid chat path and is asserted on by
+// synthesis.test.js; a shared code path would put a voice tweak one typo away
+// from silently degrading chat.
+
+/** Transits that actually drive a spoken answer. Fast movers never do. */
+const SPOKEN_TRANSITS = new Set(["Saturn", "Jupiter", "Rahu", "Ketu", "Moon"]);
+
+/** The chart as voice-session context. See the note above for what's dropped. */
+function chartToSpokenText(c) {
+  const L = [];
+  if (c.input && c.input.name) L.push(`Name: ${c.input.name}`);
+
+  // No degrees anywhere below: nobody says "twelve degrees fourteen" aloud, and
+  // the nakshatra already carries the fine-grained position that matters.
+  L.push(
+    `Ascendant / Lagna: ${c.ascendant.sign} (${c.ascendant.signSanskrit}), ` +
+      `lord ${c.ascendant.signLord}, nakshatra ${c.ascendant.nakshatra} pada ${c.ascendant.pada}`
+  );
+
+  if (c.synthesis && c.synthesis.lagnaLord) {
+    const l = c.synthesis.lagnaLord;
+    L.push(
+      `Lagna lord condition: ${l.key} in the ${ord(l.house)} house, ${l.dignity}` +
+        `${l.combust ? ", combust" : ""} — ${l.band.toUpperCase()}. ` +
+        `This is the baseline for how much the native can act on anything below.`
+    );
+  }
+
+  if (c.synthesis && c.synthesis.marriageKaraka) {
+    const mk = c.synthesis.marriageKaraka;
+    const one = p =>
+      `${p.key} in the ${ord(p.house)} house, ${p.dignity}${p.combust ? ", combust" : ""} — ${p.band.toUpperCase()}`;
+    L.push(
+      `Kalatra-karaka (spouse significator): ${mk.planets.map(one).join("; ")}. ${mk.why}.` +
+        (mk.ambiguous ? " Weigh both; do not assert one as the karaka." : "")
+    );
+  }
+
+  L.push("");
+  L.push("Planetary positions (sidereal, whole-sign houses):");
+  for (const p of c.planets) {
+    L.push(
+      `- ${p.key} (${p.sanskrit}): ${p.sign}, house ${p.house}, ` +
+        `${p.nakshatra} pada ${p.pada}, sign-lord ${p.signLord}${p.retro ? ", RETROGRADE" : ""}`
+    );
+  }
+
+  L.push("");
+  const d = c.dasha;
+  L.push(`Moon nakshatra: ${d.moonNakshatra} pada ${d.moonPada}`);
+  L.push(`Dasha balance at birth: ${d.balance}`);
+  L.push(`Current Mahadasha: ${d.maha.lord} (${d.maha.start} → ${d.maha.end})`);
+  L.push(`Current Antardasha: ${d.antar.lord} (${d.antar.start} → ${d.antar.end})`);
+  // Upcoming mahadashas are behind lookup_chart_detail. They come up rarely, and
+  // when they do the caller wants exact dates — which is precisely the case the
+  // tool exists for.
+
+  // "Aspected by" and "aspects cast" are the same relation stated twice, in
+  // opposite directions. One of them is free to drop.
+  const casts = c.planets
+    .filter(p => p.aspectsTo.length)
+    .map(p => `- ${p.key} aspects: ${p.aspectsTo.join(", ")}`);
+  if (casts.length) {
+    L.push("");
+    L.push("Graha drishti — aspects cast (planet → planets it sees):");
+    L.push(...casts);
+  }
+
+  const groups = {};
+  for (const p of c.planets) (groups[p.signIndex] ||= []).push(p);
+  const conj = Object.values(groups)
+    .filter(g => g.length > 1)
+    .map(g => `${g.map(p => p.key).join(" + ")} (conjunct in ${g[0].sign})`);
+  if (conj.length) L.push("Conjunctions (same sign): " + conj.join("; "));
+
+  if (c.navamsa) {
+    L.push("");
+    // Vargottama is the only D9 fact that changes what gets said; the rest of
+    // the D9 placements are available via lookup_chart_detail.
+    const vg = c.navamsa.planets.filter(p => p.vargottama).map(p => p.key);
+    L.push(
+      `Navamsa (D9) Ascendant: ${c.navamsa.ascendant.sign}, lord ${c.navamsa.ascendant.signLord}. ` +
+        (vg.length
+          ? `VARGOTTAMA (same sign in D1 and D9, notably strengthened): ${vg.join(", ")}.`
+          : "No vargottama planets.")
+    );
+  }
+
+  if (c.synthesis && c.synthesis.domains) {
+    L.push("");
+    L.push("=== PRIMARY VARGAS — the divisional chart that governs each life area ===");
+    L.push(
+      "Read these in order: the RASHI states the promise, the varga states whether it " +
+        "sustains, and only then does the dasha say whether it is live. A varga grades " +
+        "the rashi; it never replaces it."
+    );
+    for (const [key, dom] of Object.entries(c.synthesis.domains)) {
+      if (!dom.sustain) continue;
+      const role = dom.sustain.role === "strength" ? " (general strength grade, not a topic chart)" : "";
+      L.push(
+        `- ${key} — ${ord(dom.house)} house, ruled by ${dom.lordKey}. ` +
+          `RASHI: ${dom.promise.dignity}, ${ord(dom.promise.house)} house — ${dom.promise.band}. ` +
+          `${dom.sustain.varga} ${dom.sustain.vargaName}${role}: ${dom.sustain.dignity}, ` +
+          `${ord(dom.sustain.house)} house — ${dom.sustain.band}. ` +
+          `VERDICT: ${dom.verdict.replace(/-/g, " ")}.`
+      );
+    }
+  }
+
+  // The sixteen supplementary divisionals are the single largest block in
+  // chartToText and its own header calls them "background detail". Dropped
+  // wholesale; reachable with lookup_chart_detail when a caller asks.
+
+  if (c.transits) {
+    const slow = c.transits.planets.filter(p => SPOKEN_TRANSITS.has(p.key));
+    if (slow.length) {
+      L.push("");
+      L.push(`=== CURRENT TRANSITS / Gochar (as of ${c.transits.date}) — slow movers and the Moon ===`);
+      for (const p of slow) {
+        L.push(
+          `- ${p.key}: ${p.sign}, ${ord(p.fromMoon)} from Moon, ${ord(p.fromLagna)} from Lagna` +
+            `${p.retro ? ", retrograde" : ""}`
+        );
+      }
+    }
+  }
+
+  // Kept whole: it is 150 bytes and carries more emotional weight for a caller
+  // than anything else in the chart.
+  if (c.sadeSati) {
+    const s = c.sadeSati;
+    L.push("");
+    L.push("=== SADE SATI (Saturn's 7.5-year transit over 12th/1st/2nd from natal Moon) ===");
+    if (!s.found) {
+      L.push("No Sade Sati window found in the scanned range.");
+    } else if (s.active) {
+      L.push(`Status: ACTIVE — ${s.phaseLabel}. Saturn currently in ${s.saturnSign}.`);
+      L.push(`Full window: ${s.start} → ${s.end}.`);
+      L.push(`Phases: rising from ${s.rising}, peak from ${s.peak}, setting from ${s.setting}.`);
+    } else {
+      L.push(`Status: NOT currently in Sade Sati. Next window: ${s.start} → ${s.end}.`);
+    }
+    if (s.smallPanoti && s.smallPanoti.active) {
+      L.push(`Note: currently under ${s.smallPanoti.type} — a 2.5-year "small panoti" Saturn phase.`);
+    }
+  }
+
+  // Summary only. Bindu counts are exactly the sort of number a model invents
+  // when it half-remembers a table, which is why the grid is tool-only.
+  if (c.ashtakavarga && c.ashtakavarga.savByHouse) {
+    const a = c.ashtakavarga;
+    const sorted = a.savByHouse.slice().sort((x, y) => y.bindus - x.bindus);
+    const say = h => `${ord(h.house)} (${h.bindus})`;
+    L.push("");
+    L.push(
+      `=== ASHTAKAVARGA summary — SAV total ${a.savTotal}, house average ~28. ` +
+        `Strongest: ${sorted.slice(0, 2).map(say).join(", ")}. ` +
+        `Weakest: ${sorted.slice(-2).map(say).join(", ")}. ` +
+        `Per-house and per-planet bindus are NOT listed here — use lookup_chart_detail. ===`
+    );
+  }
+
+  if (c.yogas) {
+    L.push("");
+    L.push("=== " + yogasToText(c.yogas));
+  }
+
+  return L.join("\n");
+}
+
+// --- lookup_chart_detail -----------------------------------------------------
+// The read side of the guardrail. Everything chartToSpokenText drops is
+// reachable here, and only here, so the model's choice is "ask" or "admit it
+// doesn't know" — never "guess a plausible number".
+//
+// Pure and synchronous: no store, no network, no recompute. It reads the chart
+// object the session already holds, so a call costs microseconds and adds no
+// perceptible pause to the conversation.
+
+const DETAIL_TOPICS = [
+  "varga", "ashtakavarga_sav", "ashtakavarga_bav",
+  "dasha_dates", "transits_full", "navamsa_full"
+];
+
+/** Bound the answer: it is about to be READ ALOUD, not rendered. */
+const MAX_DETAIL_CHARS = 600;
+function cap(s) {
+  const t = String(s).replace(/\s+/g, " ").trim();
+  if (t.length <= MAX_DETAIL_CHARS) return t;
+  const cut = t.slice(0, MAX_DETAIL_CHARS - 20);
+  return cut.slice(0, cut.lastIndexOf(" ")) + " — and there is more if you need it.";
+}
+
+/**
+ * Answer one lookup against an already-computed chart.
+ *
+ * Never throws and never returns markdown. An unknown topic, a missing
+ * argument or a varga this app doesn't compute all come back as an ordinary
+ * spoken sentence, because the failure mode that matters is the agent going
+ * silent mid-call — not a malformed argument.
+ */
+function chartDetail(c, args) {
+  const a = args && typeof args === "object" ? args : {};
+  const detail = String(a.detail || "").trim().toLowerCase();
+  if (!c) return "I don't have the chart loaded, so I can't look that up right now.";
+
+  switch (detail) {
+    case "varga": {
+      const want = String(a.varga || "").trim().toUpperCase();
+      const list = c.divisionals || [];
+      if (!want) {
+        return cap("Which divisional chart? I hold " + list.map(v => v.key).join(", ") + ".");
+      }
+      const v = list.find(x => x.key.toUpperCase() === want);
+      if (!v) {
+        return cap(
+          `I don't compute a ${want} chart. The ones I hold are ` + list.map(x => x.key).join(", ") + "."
+        );
+      }
+      const pl = v.planets.map(p => `${p.key} in ${p.sign}, house ${p.house}`).join("; ");
+      return cap(`${v.key}, the ${v.name}, governs ${v.governs}. Lagna is ${v.ascendant.sign}. ${pl}.`);
+    }
+
+    case "ashtakavarga_sav": {
+      const av = c.ashtakavarga;
+      if (!av || !av.savByHouse) return "I don't have ashtakavarga for this chart.";
+      const per = av.savByHouse.map(h => `${ord(h.house)} ${h.bindus}`).join(", ");
+      return cap(`Sarvashtakavarga bindus by house, total ${av.savTotal}: ${per}.`);
+    }
+
+    case "ashtakavarga_bav": {
+      const av = c.ashtakavarga;
+      if (!av || !av.bav) return "I don't have ashtakavarga for this chart.";
+      const want = String(a.planet || "").trim();
+      const key = (av.targets || []).find(p => p.toLowerCase() === want.toLowerCase());
+      if (!key) {
+        return cap(
+          "Which planet's bindus? I have " + (av.targets || []).join(", ") + "."
+        );
+      }
+      const row = av.bav[key] || [];
+      const total = row.reduce((x, y) => x + y, 0);
+      return cap(
+        `${key}'s bhinnashtakavarga, Aries through Pisces: ${row.join(", ")}. That totals ${total}.`
+      );
+    }
+
+    case "dasha_dates": {
+      const d = c.dasha;
+      if (!d) return "I don't have the dasha for this chart.";
+      const want = String(a.lord || "").trim();
+      const up = d.upcoming || [];
+      if (want) {
+        const m = up.find(x => x.lord.toLowerCase() === want.toLowerCase());
+        if (m) return cap(`${m.lord} mahadasha begins ${m.start}.`);
+        if (d.maha.lord.toLowerCase() === want.toLowerCase()) {
+          return cap(`${d.maha.lord} mahadasha runs ${d.maha.start} to ${d.maha.end}.`);
+        }
+        return cap(
+          `${want} isn't in the running sequence. Currently ${d.maha.lord} to ${d.maha.end}, ` +
+            `then ` + up.map(x => `${x.lord} from ${x.start}`).join(", ") + "."
+        );
+      }
+      return cap(
+        `Currently ${d.maha.lord} mahadasha, ${d.maha.start} to ${d.maha.end}, with ` +
+          `${d.antar.lord} antardasha to ${d.antar.end}. After that: ` +
+          up.map(x => `${x.lord} from ${x.start}`).join(", ") + "."
+      );
+    }
+
+    case "transits_full": {
+      const t = c.transits;
+      if (!t) return "I don't have current transits for this chart.";
+      const all = t.planets
+        .map(p => `${p.key} in ${p.sign}, ${ord(p.fromMoon)} from Moon${p.retro ? ", retrograde" : ""}`)
+        .join("; ");
+      return cap(`Transits as of ${t.date}: ${all}.`);
+    }
+
+    case "navamsa_full": {
+      const n = c.navamsa;
+      if (!n) return "I don't have a navamsa for this chart.";
+      const pl = n.planets
+        .map(p => `${p.key} in ${p.sign}, house ${p.house}${p.vargottama ? ", vargottama" : ""}`)
+        .join("; ");
+      return cap(`Navamsa lagna is ${n.ascendant.sign}. ${pl}.`);
+    }
+
+    default:
+      return cap(
+        `I can't look that one up. What I can pull: ` + DETAIL_TOPICS.join(", ") + "."
+      );
+  }
+}
+
+module.exports = { computeChart, chartToText, chartToSpokenText, chartDetail, DETAIL_TOPICS };
