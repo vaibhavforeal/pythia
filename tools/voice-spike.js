@@ -360,7 +360,12 @@ function serve(rung) {
     console.log("    8  rerun with --slow and listen for a filler line before the answer");
     console.log("    9  make one deliberate 5-minute call, then read Azure Cost Management");
     console.log("       tomorrow, filtered to this resource. BYOM is not in the published");
-    console.log("       Voice Live tier table, so this is the only way to learn the rate.\n");
+    console.log("       Voice Live tier table, so this is the only way to learn the rate.");
+    console.log("   10  press \"Try to tamper\", then ask something off-topic. Under WebRTC");
+    console.log("       the data channel is browser-to-Azure with our server nowhere in");
+    console.log("       between — if the page can push its own session.update, then the");
+    console.log("       chart grounding and the care protocol are client-editable and the");
+    console.log("       guardrail is theatre. This is the one that decides the design.\n");
   });
 }
 
