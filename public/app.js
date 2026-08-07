@@ -260,8 +260,13 @@ function setupChartControls() {
       const mine = loadMyBirth();
       if (!mine) return;
       pendingOther = false;
-      lastInput = mine;
-      if (await castChart(mine, true)) setViewing(null);
+      lastInput = { ...mine, gender: (myAccount && myAccount.gender) || mine.gender || "" };
+      // Reclaim the form too. Coming back from someone else's chart used to
+      // leave THEIR details in the fields with viewingOther already cleared, so
+      // the guard on the form toggle no longer caught it — and "edit my birth
+      // details" would have offered to save them as yours.
+      fillBirthForm(lastInput);
+      if (await castChart(lastInput, true)) setViewing(null);
     });
   }
 }
@@ -740,6 +745,11 @@ async function restoreMyChart(serverBirth) {
   // The stored birth predates gender and doesn't carry it, so re-attach it from
   // the account — otherwise the next "save current" would drop the answer.
   lastInput = { ...mine, gender: (myAccount && myAccount.gender) || mine.gender || "" };
+  // Put the details back in the form as well as on screen. Restoring only the
+  // chart left Profile holding an empty form, and because #dob is `required`
+  // the browser blocked submit before our handler ran — so editing your own
+  // birth details after a reload failed silently, with no error to explain it.
+  fillBirthForm(lastInput);
   const ok = await castChart(mine, true);
   if (ok) setViewing(null);
   return ok;
