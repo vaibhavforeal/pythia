@@ -78,6 +78,10 @@ const LADDER = [
 // but the header form is unavailable in browsers, and using the same form the
 // browser would have to use keeps the spike honest about what is possible.
 // Redacted everywhere it is printed.
+// Wall-clock on the control-socket log, so its events can be lined up against
+// the browser's. Without it the two logs cannot be correlated at all.
+const stamp = () => new Date().toISOString().slice(11, 23);
+
 const urlFor = r =>
   `wss://${HOST}${r.path}?api-version=${r.apiVersion}` +
   `&profile=${PROFILE}&model=${encodeURIComponent(MODEL)}&api-key=${encodeURIComponent(KEY)}`;
@@ -427,19 +431,29 @@ async function openControl(rung, sdpOffer) {
           if (seen.has(callId)) return;
           seen.add(callId);
 
-          console.log(`  ✅ CRITERION 5 — TOOL CALL ${name} via ${evt.type}`);
+          // Attribute the tool-turn delay. The browser sees ~6s between the
+          // filler line and the answer; that is either OUR handler, or the
+          // model taking that long to emit the call, or the model taking that
+          // long to speak after being given the result. Three different fixes,
+          // so measure rather than assume.
+          const arrivedAt = Date.now();
+          console.log(`  ✅ CRITERION 5 — TOOL CALL ${name} via ${evt.type}  @${stamp()}`);
           console.log(`      call_id=${callId} args=${rawArgs}`);
+          if (answeredAt) {
+            console.log(`      the model asked ${arrivedAt - answeredAt}ms into the call`);
+          }
 
           let parsed = {};
           try { parsed = JSON.parse(rawArgs); } catch { /* model sent junk; answer anyway */ }
           const output = await toolAnswer(parsed);
+          const handlerMs = Date.now() - arrivedAt;
 
           ws.send(JSON.stringify({
             type: "conversation.item.create",
             item: { type: "function_call_output", call_id: callId, output }
           }));
           ws.send(JSON.stringify({ type: "response.create" }));
-          console.log(`      ↩ answered with "${MAGIC}" — listen for it in the reply`);
+          console.log(`      ↩ answered in ${handlerMs}ms @${stamp()} — anything beyond this is the model`);
         }
       } catch (err) {
         console.error("  ‼ control handler threw:", err);

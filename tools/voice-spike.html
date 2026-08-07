@@ -64,6 +64,13 @@
   // and when the service noticed the caller talking over it.
   let speakingSince = 0;
 
+  // Time to first audio: from the moment the service accepts that the caller
+  // has finished speaking, to the first byte of the reply coming out of the
+  // speaker. This is the number that decides whether it feels like a person.
+  // Under ~1.5s is the bar; Opus measured 1.7-2.5s.
+  let committedAt = 0;
+  const latencies = [];
+
   function log(msg, cls) {
     const t = new Date().toISOString().slice(11, 23);
     const line = document.createElement("div");
@@ -208,6 +215,22 @@
       case "input_audio_buffer.speech_stopped":
         setTurn("thinking");
         break;
+
+      case "input_audio_buffer.committed":
+        committedAt = Date.now();
+        setTurn("thinking");
+        break;
+
+      case "output_audio_buffer.started": {
+        if (!committedAt) break;
+        const ms = Date.now() - committedAt;
+        committedAt = 0;
+        latencies.push(ms);
+        const mean = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+        const verdict = ms <= 1500 ? "ok" : ms <= 2000 ? "warn" : "err";
+        log(`TIME TO FIRST AUDIO ${ms}ms  (n=${latencies.length}, mean ${mean}ms, bar 1500ms)`, verdict);
+        break;
+      }
 
       case "response.created":
         setTurn("thinking");

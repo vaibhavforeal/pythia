@@ -31,9 +31,19 @@ services:
       # only knowable by making a call and reading Azure Cost Management.
       #
       # Before switching this on, ALL of these must be true:
-      #   1. VOICE_DEPLOYMENT points at a FAST Claude deployment (haiku/sonnet).
-      #      Opus measured 1.7-2.5s to first audio, against a 1.5s bar — chat
-      #      keeps Opus, a call cannot.
+      #   1. VOICE_DEPLOYMENT points at claude-haiku-4-5. Measured, not assumed:
+      #      time from end-of-speech to first audio, on ordinary (non-tool) turns.
+      #
+      #        haiku-4-5     1779, 1425 ms            mean 1602 ms
+      #        opus-4-8      1.7-2.5 s                mean ~2100 ms
+      #        sonnet-4-6    2563, 2843, 2223, 3021   mean 2663 ms
+      #        bar                                         1500 ms
+      #
+      #      Sonnet is the SLOWEST of the three, which is the opposite of what
+      #      the plan assumed — it writes longer replies, and more words means
+      #      more to generate before the first sentence can be synthesised. Small
+      #      samples, so re-measure if this matters to a decision. Chat keeps
+      #      Opus regardless: it is a written reading, not a conversation.
       #   2. The Foundry resource is in a Voice Live region (~10 of them).
       #   3. A real call's cost has been measured, and MINUTES_PER_DAY set from
       #      that number rather than from this guess.
