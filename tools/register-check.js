@@ -1,17 +1,22 @@
-// Prints a real chat reply in both voice modes, side by side.
+// Prints a real chat reply in both registers, side by side.
+//
+// Named for REGISTER, not audio. This checks how a reply READS — the file was
+// called voice-check.js until the app grew an actual voice agent, at which point
+// the name became a trap. server/voice.js is the audio one.
 //
 // ⚠ THIS MAKES TWO REAL, BILLABLE MODEL CALLS. It is deliberately not part of
 // `npm test` — the suite must stay free and offline. Run it by hand after
-// touching VOICE_NOTE, NERD_NOTE, BEHAVIOUR_NOTE or the skill markdown:
+// touching REGISTER_NOTE, NERD_NOTE, BEHAVIOUR_NOTE or the skill markdown
+// (all in server/prompts.js):
 //
-//     node tools/voice-check.js
-//     node tools/voice-check.js "should i take this job?"
+//     node tools/register-check.js
+//     node tools/register-check.js "should i take this job?"
 //
 // Why it exists: a prompt change is the one kind of change the test suite
 // cannot judge. Tests can prove the flag is plumbed through; only reading the
 // output tells you whether the register actually moved. The jargon counter at
 // the bottom is a rough regression signal — if the casual number creeps up
-// toward the nerd number, the voice instruction has stopped biting.
+// toward the nerd number, the register instruction has stopped biting.
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -116,7 +121,7 @@ async function chat(chart, question, nerdMode) {
     const cj = (casual.match(JARGON) || []).length;
     const nj = (nerd.match(JARGON) || []).length;
     console.log(`\n\n---- jargon terms: casual=${cj}  nerd=${nj} ----`);
-    if (cj > nj / 2) console.log("     ⚠ casual is drifting technical — check VOICE_NOTE still leads with meaning.");
+    if (cj > nj / 2) console.log("     ⚠ casual is drifting technical — check REGISTER_NOTE still leads with meaning.");
   } finally {
     done();
   }
