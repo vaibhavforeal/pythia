@@ -27,6 +27,11 @@ const {
 // left enabled.
 const ENABLED = String(process.env.VOICE_ENABLED || "").trim().toLowerCase() === "true";
 
+// Prints every upstream control frame. Deliberately opt-in: those frames carry
+// transcripts of what a caller said out loud, which has no business sitting in
+// a server log by default.
+const DEBUG = String(process.env.VOICE_DEBUG || "").trim().toLowerCase() === "true";
+
 // Pinned, not defaulted to "latest": these are preview APIs. The probe in
 // tools/voice-spike.js found 2026-01-01-preview is the ONLY api-version that
 // accepts the WebRTC /calls endpoint — 2026-04-10 and 2026-06-01-preview are
@@ -187,6 +192,11 @@ function buildSessionConfig({ chart, voice, sessionId, userHash } = {}) {
     instructions,
     // A BYOM text model has no native audio, so output is Azure neural TTS.
     voice: { type: "azure-standard", name: VOICES[voiceKey] },
+    // EXACTLY the shape tools/voice-spike.js proved against this api-version.
+    // Nothing is added here speculatively: the endpoint is a preview one, an
+    // unrecognised field can sink the whole session update, and a session with
+    // no working turn detection presents as a call that listens and never
+    // answers — with no error anywhere.
     turn_detection: {
       // Multilingual, so a caller code-switching into Hindi mid-sentence is
       // still segmented correctly. Semantic rather than silence-based: it waits
@@ -196,8 +206,6 @@ function buildSessionConfig({ chart, voice, sessionId, userHash } = {}) {
       threshold: 0.5,
       prefix_padding_ms: 300,
       silence_duration_ms: 500,
-      // Barge-in must actually stop the agent, not just duck it.
-      interrupt_response: true,
       // Truncate history to what was ACTUALLY heard. Without this the model
       // believes it delivered a sentence the caller talked over — which for a
       // half-spoken helpline number is the difference between having it and
@@ -206,7 +214,16 @@ function buildSessionConfig({ chart, voice, sessionId, userHash } = {}) {
     },
     input_audio_noise_reduction: { type: "azure_deep_noise_suppression" },
     input_audio_echo_cancellation: {},
-    input_audio_transcription: { model: "azure-speech" },
+    // Deliberately NOT sent:
+    //   interrupt_response       barge-in already works without it — measured
+    //                            at 841ms in the spike, with the conversation
+    //                            item truncated as it should be
+    //   input_audio_transcription  the docs say Azure speech-to-text is active
+    //                            automatically for a non-multimodal model, and
+    //                            the spike had transcripts without asking
+    // Both were added from the documentation rather than from evidence, and
+    // both are the difference between the config that worked and one that did
+    // not. Re-add only with a spike run behind it.
     tools: [VOICE_TOOL],
     // The only mechanism tying real Azure spend back to a call: token counts are
     // not reportable server-side here (BYOM reports audio tokens only, and under
@@ -423,6 +440,15 @@ function routes(app) {
         try {
           const evt = JSON.parse(ev.data);
           bumpIdle(s);
+
+          // VOICE_DEBUG=true prints every control frame, which is the only way
+          // to tell "the model never answered" from "the service rejected the
+          // session". Off by default: these frames carry transcripts of what a
+          // caller actually said, and that does not belong in a server log.
+          if (DEBUG) {
+            const line = JSON.stringify(evt);
+            console.log(`  ‹voice› ${evt.type} ${line.length > 220 ? line.slice(0, 220) + "…" : line}`);
+          }
 
           switch (evt.type) {
             case "rtc.call.sdp.created":

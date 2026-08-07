@@ -37,6 +37,12 @@ async function start(extra = {}) {
       DATA_DIR,
       SESSION_SECRET: "test-only-secret",
       NODE_ENV: "test",
+      // Explicitly cleared, not merely omitted. index.js loads .env through
+      // dotenv, so a developer who set ALLOW_EMAIL_SIGNUP=true locally — an
+      // ordinary thing to do, since email signup is off by default and you
+      // cannot otherwise make a test account — would inherit it here and see
+      // the "refused by default" tests fail with nothing to connect it to.
+      ALLOW_EMAIL_SIGNUP: "",
       ...extra
     },
     stdio: ["ignore", "pipe", "pipe"]

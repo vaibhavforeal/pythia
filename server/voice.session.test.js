@@ -120,10 +120,21 @@ test("the session is configured for a real conversation", () => {
   assert.deepEqual(cfg.modalities, ["text", "audio"]);
   // Multilingual VAD is what lets a caller switch into Hindi mid-sentence.
   assert.equal(cfg.turn_detection.type, "azure_semantic_vad_multilingual");
-  // Barge-in must stop the agent outright.
-  assert.equal(cfg.turn_detection.interrupt_response, true);
-  // And history must match what was actually heard, not what was sent.
+  // History must match what was actually heard, not what was sent.
   assert.equal(cfg.turn_detection.auto_truncate, true);
+
+  // The session must carry ONLY fields the spike proved against this preview
+  // api-version. interrupt_response and input_audio_transcription were both
+  // added from the docs without a spike run, and both are in the diff between
+  // a config that answered and one that listened in silence. This asserts the
+  // discipline, not the fields: anything new here needs evidence first.
+  assert.deepEqual(Object.keys(cfg).sort(), [
+    "input_audio_echo_cancellation", "input_audio_noise_reduction", "instructions",
+    "metadata", "modalities", "tools", "turn_detection", "voice"
+  ]);
+  assert.deepEqual(Object.keys(cfg.turn_detection).sort(), [
+    "auto_truncate", "prefix_padding_ms", "silence_duration_ms", "threshold", "type"
+  ]);
   assert.ok(cfg.input_audio_echo_cancellation, "echo cancellation is off");
   assert.equal(cfg.tools.length, 1);
   assert.equal(cfg.tools[0].name, "lookup_chart_detail");
