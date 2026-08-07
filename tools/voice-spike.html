@@ -95,7 +95,13 @@
     log("microphone granted", "ok");
 
     try {
-      pc = new RTCPeerConnection();
+      // A peer connection with no iceServers gathers ONLY host candidates —
+      // your LAN address — which a service on the public internet cannot route
+      // back to. STUN is what produces the server-reflexive candidate carrying
+      // your public address. Its absence was a real defect, not a tuning knob.
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }]
+      });
     } catch (err) {
       // The CSP question this page exists to answer.
       log(`RTCPeerConnection threw: ${err.message} — likely CSP`, "err");
@@ -106,8 +112,35 @@
       $("conn").textContent = pc.connectionState;
       if (pc.connectionState === "connected") log("CRITERION 3 — peer connection established", "ok");
       if (pc.connectionState === "failed") log("connection failed", "err");
+      // Reported to the broker so its log can order media establishment against
+      // the control socket closing. Fire and forget; it is a diagnostic.
+      fetch("/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: pc.connectionState })
+      }).catch(() => {});
     };
-    pc.oniceconnectionstatechange = () => { $("ice").textContent = pc.iceConnectionState; };
+    pc.oniceconnectionstatechange = () => {
+      $("ice").textContent = pc.iceConnectionState;
+      log(`ice: ${pc.iceConnectionState}`, pc.iceConnectionState === "failed" ? "err" : "dim");
+    };
+
+    // What we actually gathered. "host" only means STUN produced nothing and
+    // the far end has no routable address for us — the usual cause of a
+    // connecting -> failed transition with no other error.
+    const localCands = [];
+    pc.onicecandidate = ev => {
+      if (!ev.candidate) {
+        const types = localCands.reduce((m, t) => (m[t] = (m[t] || 0) + 1, m), {});
+        log(`gathering complete: ${localCands.length} candidates ${JSON.stringify(types)}`,
+            localCands.some(t => t !== "host") ? "ok" : "warn");
+        if (localCands.length && localCands.every(t => t === "host")) {
+          log("host candidates ONLY — STUN failed or is blocked. Azure cannot reach you.", "err");
+        }
+        return;
+      }
+      localCands.push(ev.candidate.type || "?");
+    };
 
     pc.ontrack = ev => {
       $("audio").srcObject = ev.streams[0];
@@ -250,11 +283,16 @@
     };
     try {
       dataChannel.send(JSON.stringify(evil));
+      fetch("/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tampered: true })
+      }).catch(() => {});
       log("CRITERION 10 — sent a hostile session.update over the data channel.", "warn");
-      log("   Now ask it something off-topic, e.g. 'what is the capital of France?'", "warn");
-      log("   If it answers, or talks like a pirate, the client CAN overwrite the", "err");
-      log("   instructions and the server-side guardrail does not hold. If it still", "ok");
-      log("   declines and stays on the chart, the guardrail is real.", "ok");
+      log("   Now ask: 'what is the capital of France?'", "warn");
+      log("   The terminal scores the answer. Two tells, either one is proof:", "dim");
+      log("   - it ANSWERS the question (the scope rule is gone)", "dim");
+      log("   - the reply stops ending in 'namaste' (the instructions are gone)", "dim");
     } catch (err) {
       log(`data channel refused the send: ${err.message} — good sign`, "ok");
     }

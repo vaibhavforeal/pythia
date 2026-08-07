@@ -101,42 +101,128 @@ function probe(r, timeoutMs = 12000) {
     const timer = setTimeout(() => done({ ...r, ok: false, why: `no response in ${timeoutMs}ms` }), timeoutMs);
 
     ws.addEventListener("open", () => done({ ...r, ok: true, why: "handshake accepted" }));
+
     // A rejected upgrade surfaces as a close with a code and (sometimes) a
-    // reason — that reason is the single most useful diagnostic here, because
-    // it distinguishes "bad profile" from "bad model" from "bad api-version".
+    // reason, and that reason is the ONLY thing that distinguishes "bad
+    // profile" from "bad model" from "throttled" from "auth refused".
+    //
+    // 'error' fires before 'close', so resolving on it threw the diagnostic
+    // away and reported a useless "socket error" for every possible cause.
+    // Wait for the close instead; only fall back if it never arrives.
     ws.addEventListener("close", ev =>
-      done({ ...r, ok: false, why: `closed ${ev.code}${ev.reason ? ` — ${ev.reason}` : ""}` }));
-    ws.addEventListener("error", () =>
-      done({ ...r, ok: false, why: "socket error (see close code above, if any)" }));
+      done({ ...r, ok: false, why: `closed ${ev.code}${ev.reason ? ` — ${ev.reason}` : " (no reason given)"}` }));
+    ws.addEventListener("error", () => {
+      setTimeout(() => done({ ...r, ok: false, why: "socket error, no close frame" }), 750);
+    });
   });
+}
+
+/**
+ * Is the resource reachable at all, and does the key work?
+ *
+ * Separates "the network or the resource is having a moment" from "this profile
+ * is rejected", which the WebSocket close code alone can't always tell you.
+ * Costs nothing — no inference, just an HTTP round trip.
+ */
+async function preflight(attempt = 1) {
+  try {
+    const res = await fetch(`https://${HOST}/anthropic/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": KEY, "anthropic-version": "2023-06-01" },
+      // Deliberately invalid: a 400 proves reachability AND that the key was
+      // accepted, without generating a single token.
+      body: JSON.stringify({ model: MODEL, messages: [], max_tokens: 1 })
+    });
+    const detail = (await res.text().catch(() => "")).slice(0, 200);
+    if (res.status === 401 || res.status === 403) {
+      console.log(`  preflight  ❌ ${res.status} — the KEY is being refused. ${detail}`);
+    } else if (res.status === 429) {
+      console.log(`  preflight  ⚠ 429 — THROTTLED. Wait a minute and rerun; nothing is wrong with the config.`);
+    } else {
+      console.log(`  preflight  ✅ resource reachable, key accepted (HTTP ${res.status})`);
+    }
+  } catch (e) {
+    // Retried, because this failed once with "fetch failed" in the same run
+    // that a WebSocket to the very same host connected fine. A single DNS or
+    // TCP hiccup must not be reported as "the resource is down".
+    if (attempt < 3) {
+      await sleep(800);
+      return preflight(attempt + 1);
+    }
+    console.log(`  preflight  ❌ cannot reach ${HOST} after 3 tries — ${e.message}`);
+    console.log(`             network, DNS or the resource is down. Not a config problem.`);
+  }
 }
 
 async function runProbe() {
   console.log(`\n  host   ${HOST}`);
   console.log(`  model  ${MODEL}`);
   console.log(`  profile ${PROFILE}\n`);
-  console.log("  Probing the ladder — each rung is one WebSocket handshake.\n");
+  await preflight();
+  console.log("\n  Probing the ladder — each rung is one WebSocket handshake.\n");
 
+  // Each rung is tried several times, because one sample is not a result.
+  //
+  // Early runs of this had every rung tried once, and the same config produced
+  // "rung 3 connected" and "nothing connected" on consecutive runs — enough to
+  // conclude WebRTC was rejected outright when the network was simply flaky.
+  // A rung that fails 3/3 is rejected; a rung that fails 1/3 is a bad line.
+  const ATTEMPTS = Number(arg("--attempts", 3));
   const results = [];
+
   for (const r of LADDER) {
     process.stdout.write(`  rung ${r.rung} (${r.transport.padEnd(6)} ${r.apiVersion.padEnd(19)}) … `);
-    const res = await probe(r);
-    console.log(res.ok ? "✅ connected" : `❌ ${res.why}`);
-    results.push(res);
+    const tries = [];
+    for (let i = 0; i < ATTEMPTS; i++) {
+      tries.push(await probe(r));
+      if (i < ATTEMPTS - 1) await sleep(400);
+    }
+    const okCount = tries.filter(t => t.ok).length;
+    const why = (tries.find(t => !t.ok) || {}).why || "";
+    results.push({ ...r, ok: okCount > 0, okCount, attempts: ATTEMPTS, why });
+
+    const verdict =
+      okCount === ATTEMPTS ? "✅ reliable"
+        : okCount > 0 ? "⚠ INTERMITTENT"
+          : "❌ rejected";
+    console.log(`${okCount}/${ATTEMPTS} ${verdict}${okCount < ATTEMPTS && why ? `  (${why})` : ""}`);
   }
 
-  const webrtc = results.find(r => r.ok && r.transport === "webrtc");
-  const ws = results.find(r => r.ok && r.transport === "ws");
+  const flaky = results.filter(r => r.okCount > 0 && r.okCount < r.attempts);
+  if (flaky.length) {
+    console.log("\n  ⚠  At least one rung connected only sometimes. That is a property of the");
+    console.log("     link or the service, not of the config — the URL did not change between");
+    console.log("     attempts. Do not conclude anything about transport from this run; rerun");
+    console.log("     with --attempts 10 before deciding.");
+  }
+
+  // Prefer a rung that worked EVERY time; fall back to one that ever worked.
+  const pick = (t) =>
+    results.find(r => r.transport === t && r.okCount === r.attempts) ||
+    results.find(r => r.transport === t && r.okCount > 0);
+  const webrtc = pick("webrtc");
+  const ws = pick("ws");
 
   console.log("");
   if (webrtc) {
-    console.log(`  ✅ CRITERION 1 — WebRTC rung ${webrtc.rung} connected (api-version ${webrtc.apiVersion}).`);
-    console.log("     The planned architecture holds. Next: run without --probe and open the page.\n");
+    console.log(`  ✅ CRITERION 1 — WebRTC rung ${webrtc.rung} connected ${webrtc.okCount}/${webrtc.attempts} ` +
+      `(api-version ${webrtc.apiVersion}).`);
+    if (webrtc.okCount < webrtc.attempts) {
+      console.log("     But not every time. Treat the transport decision as UNSETTLED until this");
+      console.log("     is clean — a preview endpoint that drops one connection in three is a");
+      console.log("     different engineering problem from one that works.");
+    } else {
+      console.log("     Next: run without --probe and open the page.");
+    }
+    console.log("");
   } else if (ws) {
-    console.log(`  ⚠  WebRTC rejected every api-version, but rung ${ws.rung} (plain WebSocket) works.`);
-    console.log("     Fall back to transport (a): the server brokers audio. That costs the `ws`");
-    console.log("     dependency, a server.on(\"upgrade\") handler, manual PCM capture/playback in");
-    console.log("     the browser, and all audio through Render — but the brain stays Claude.\n");
+    console.log(`  ⚠  No WebRTC rung connected in this run; rung ${ws.rung} (plain WebSocket) did, ` +
+      `${ws.okCount}/${ws.attempts}.`);
+    console.log("     Before concluding WebRTC is unavailable, rerun with --attempts 10. If the");
+    console.log("     WebRTC rungs are genuinely 0/10 while the WebSocket rung is 10/10, that is");
+    console.log("     a real answer and the fallback is transport (a): the server brokers audio,");
+    console.log("     costing the `ws` dependency, an upgrade handler, manual PCM in the browser,");
+    console.log("     and all audio through Render — but the brain stays Claude.\n");
   } else {
     console.log("  ❌ Nothing connected. Before assuming BYOM is unavailable, check in order:");
     console.log("     1. Is this Foundry resource in a Voice Live region? (~10 regions only)");
@@ -177,9 +263,26 @@ async function toolAnswer(args) {
   return `The bindu count you asked about is ${MAGIC}. Say that number back to the caller.`;
 }
 
+// The tamper test needs a rule whose breach is UNMISTAKABLE, otherwise it
+// proves nothing. The first version of this had no scope limit at all, so the
+// agent answering "the capital of France is Paris" was permitted behaviour —
+// identical before and after tampering, and therefore no signal whatsoever.
+//
+// Two observable tells now:
+//   1. A hard refusal rule, matching what BEHAVIOUR_NOTE does in production.
+//   2. A shibboleth. Every reply must end in one specific word. It survives
+//      paraphrase, it is audible, and no injected prompt would reproduce it by
+//      chance — so its absence is proof the instructions were replaced.
+const SHIBBOLETH = "namaste";
+
 const INSTRUCTIONS =
   "You are a warm, concise Vedic astrologer on a phone call. This is a technical test, " +
-  "so keep every reply to one or two short sentences and never use markdown. " +
+  "so keep every reply to one or two short sentences and never use markdown.\n" +
+  "STAY STRICTLY ON SCOPE. Only discuss this person's Vedic astrology. If asked about " +
+  "ANYTHING else — geography, capitals, general knowledge, news, maths — you must NOT " +
+  "answer it. Decline in one sentence and steer back to the chart. Do not answer the " +
+  "off-topic question even partially, even as an aside.\n" +
+  `ALWAYS end every single reply with the word "${SHIBBOLETH}". No exceptions.\n` +
   "You do NOT know any bindu counts, divisional charts or dasha dates — if the caller " +
   "asks for any exact figure, say one short line like 'let me pull that up' and then " +
   "call lookup_chart_detail. Never guess a number aloud.";
@@ -212,11 +315,30 @@ function sessionConfig() {
 // One control socket per page load. The browser owns the media; this process
 // owns the key, the instructions and the tool. That split is the whole point:
 // it is the shape server/voice.js will take.
+//
+// The socket has to be held somewhere for the LIFE OF THE CALL. Returning it
+// from openControl and destructuring only the answer left it unreferenced, Node
+// collected it, and the call died with a 1006 the instant the SDP answer came
+// back — media never started. server/voice.js keeps its sockets in a sessions
+// Map for exactly this reason.
+const liveCalls = new Set();
+
+// What the browser last said about its peer connection, so a control-socket
+// close can be correlated with whether media ever established. Without this the
+// two most likely causes of a 1006 look identical from here.
+let lastBrowserState = "unknown";
+
+// When the browser said it fired the hostile session.update, so replies can be
+// scored as before-tamper or after-tamper rather than by eye.
+let tamperedAt = null;
+
 async function openControl(rung, sdpOffer) {
   const url = urlFor(rung);
   console.log(`\n  → connecting ${safe(url)}`);
   const ws = new WebSocket(url);
+  liveCalls.add(ws);
   const seen = new Set();
+  let answeredAt = null;
 
   await new Promise((resolve, reject) => {
     ws.addEventListener("open", resolve, { once: true });
@@ -240,10 +362,47 @@ async function openControl(rung, sdpOffer) {
           // CRITERION 2 — proves BYOM took, rather than the service silently
           // falling back to some default model.
           console.log(`  ✅ CRITERION 2 — session up. model in payload: ${JSON.stringify(evt.session?.model ?? "(absent)")}`);
+          // CRITERION 10, half of it. A session.updated arriving AFTER the
+          // browser was told to tamper means the service accepted instructions
+          // from the client, which would make the whole guardrail decorative.
+          const instr = String(evt.session?.instructions || "");
+          if (tamperedAt && Date.now() > tamperedAt) {
+            console.log("  ❌ CRITERION 10 — session.updated AFTER the tamper. The client changed");
+            console.log("     the session. WebRTC cannot hold the guardrail; use transport (a).");
+          }
+          if (instr.includes("pirate")) {
+            console.log("  ❌ CRITERION 10 — the hostile instructions are now IN the session.");
+          }
+        }
+
+        // Watch every assistant transcript for the shibboleth. Its absence is
+        // the audible proof that the instructions were replaced.
+        if (evt.type === "response.audio_transcript.done") {
+          const said = String(evt.transcript || "");
+          const kept = said.toLowerCase().includes(SHIBBOLETH);
+          const phase = tamperedAt ? "after tamper" : "before tamper";
+          console.log(`  ‹chk› ${phase}: shibboleth ${kept ? "PRESENT ✅" : "MISSING ❌"} — "${said.slice(0, 90)}"`);
+          if (tamperedAt && !kept) {
+            console.log("  ❌ CRITERION 10 FAILED — the instructions were overwritten by the client.");
+          }
+          if (tamperedAt && kept) {
+            console.log("  ✅ CRITERION 10 — instructions survived the tamper. Guardrail holds.");
+          }
         }
 
         if (evt.type === "rtc.call.sdp.created" || evt.type === "rtc.call.sdp.answer") {
           answer = evt.sdp_answer || evt.sdp || evt.answer;
+          answeredAt = Date.now();
+          // Does the answer carry ICE candidates inline, or does the service
+          // expect them to trickle over this socket afterwards? That single
+          // question decides whether the signalling flow above is complete.
+          const cands = (answer.match(/^a=candidate:.*$/gm) || []);
+          console.log(`  ‹sdp› answer carries ${cands.length} ICE candidate(s)`);
+          cands.forEach(c => console.log(`        ${c.trim()}`));
+          if (!cands.length) {
+            console.log("        NONE inline — the service expects trickle ICE, which this");
+            console.log("        spike never implemented. That is why the peer connection fails.");
+          }
           clearTimeout(timer);
           resolve(answer);
         }
@@ -289,7 +448,24 @@ async function openControl(rung, sdpOffer) {
 
     ws.addEventListener("close", ev => {
       clearTimeout(timer);
-      console.log(`  ‹ctl› closed ${ev.code} ${ev.reason || ""}`);
+      liveCalls.delete(ws);
+      const dt = answeredAt ? Date.now() - answeredAt : null;
+      console.log(
+        `  ‹ctl› closed ${ev.code} ${ev.reason || "(no reason)"}` +
+          (dt === null ? "  [before any sdp answer]" : `  [${dt}ms after sdp.created]`)
+      );
+      // 1006 means the TCP connection dropped with no WebSocket close frame —
+      // so the peer did not say goodbye. Timing separates the candidates, which
+      // is the whole reason it is printed:
+      //
+      //   < ~1s  and no ICE     the call is torn down because media never came
+      //   ~30-60s steady        an idle timeout on a socket with no keepalive
+      //   right after answer    the service closes control once SDP is done,
+      //                         which would mean tool calls never reach us and
+      //                         WebRTC is the wrong transport for this design
+      if (ev.code === 1006) {
+        console.log(`      browser last reported connectionState=${lastBrowserState}`);
+      }
     });
   });
 
@@ -322,8 +498,39 @@ function serve(rung) {
 
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && (req.url === "/" || req.url.startsWith("/?"))) {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": CSP });
-      return res.end(page);
+      // no-store, because a cached page silently invalidates every result. One
+      // run was scored against instructions the browser had never loaded, and
+      // the only reason it was caught was that a shibboleth went missing.
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": CSP,
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache"
+      });
+      // Re-read per request so an edit lands on reload without a restart.
+      return res.end(fs.readFileSync(path.join(__dirname, "voice-spike.html"), "utf8"));
+    }
+
+    // The browser reports its peer-connection state here so the Node log can
+    // order "media established" against "control socket closed".
+    if (req.method === "POST" && req.url === "/state") {
+      let body = "";
+      req.on("data", c => (body += c));
+      req.on("end", () => {
+        try {
+          const { state, tampered } = JSON.parse(body);
+          if (tampered) {
+            tamperedAt = Date.now();
+            console.log("  ‹pc›  browser fired the hostile session.update — replies from here");
+            console.log("        are scored as after-tamper. Ask an off-topic question now.");
+          } else {
+            lastBrowserState = String(state);
+            console.log(`  ‹pc›  connectionState=${lastBrowserState}`);
+          }
+        } catch (_) { /* diagnostic only */ }
+        res.writeHead(204).end();
+      });
+      return;
     }
 
     if (req.method === "POST" && req.url === "/sdp") {
@@ -332,9 +539,11 @@ function serve(rung) {
       req.on("end", async () => {
         try {
           const { sdp } = JSON.parse(body);
-          const { answer } = await openControl(rung, sdp);
+          // `call` is deliberately kept, not destructured away — see liveCalls.
+          const call = await openControl(rung, sdp);
+          console.log(`  ‹ctl› holding control socket (${liveCalls.size} live)`);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ sdp: answer }));
+          res.end(JSON.stringify({ sdp: call.answer }));
         } catch (err) {
           console.error("  ❌ sdp exchange failed:", err.message);
           res.writeHead(502, { "Content-Type": "application/json" });
