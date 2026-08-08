@@ -45,6 +45,11 @@ nobody, and opening voice to everyone takes the sentinel `*`.
 **Voice is live in production.** `voice-agent` merged to `main` (15 commits) and
 deployed, plus 3 more. 366 tests pass.
 
+**The handoff skill itself was rewritten** at `~/.claude/skills/handoff/SKILL.md`
+— outside this repo, so it will not show in any diff here. It now requires goal,
+current state, files changed, files in flight, failed attempts and next steps as
+named sections, which is why this document has a shape earlier handoffs do not.
+
 ## Files changed
 
 | File | |
@@ -252,9 +257,11 @@ Do not open `VOICE_ALLOWLIST` to `*` until 2 and 3 are done.
 
 ## Branch and tree state
 
-- `main` = `bafb311`, pushed and deployed.
-- `voice-prosody` = `82b4a57`, **one commit ahead, unpushed** — the audition
-  shortlist. Currently checked out.
+- `main` = `bafb311`, pushed and deployed. Voice is live there behind the
+  allowlist.
+- `voice-prosody` = `cf11810`, **two commits ahead of `main`, unpushed** — the
+  audition shortlist and this handoff. Currently checked out. Neither is server
+  code, so nothing on this branch needs deploying.
 - Untracked and deliberately left alone: `mobile/package-lock.json` (new, from
   `npm install` in `mobile/`; probably should be committed) and a 563 KB session
   transcript `.txt` in the repo root.
