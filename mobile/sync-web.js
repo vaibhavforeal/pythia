@@ -37,6 +37,39 @@ function copyDir(from, to) {
   }
 }
 
+// api.js carries a cache-busting query string that changes whenever the
+// frontend ships (?v9 at the time of writing). Anchoring on the literal tag
+// meant every bump silently broke the mobile build — silently because nobody
+// runs this script until the day they are trying to ship. Match the src and
+// ignore the query.
+const API_TAG = /([ \t]*)<script src="api\.js[^"]*"><\/script>/;
+
+/**
+ * Put the real API origin in front of api.js, so the bundled app calls the
+ * server instead of its own webview.
+ *
+ * Pure string in, string out, so the anchor can be tested without a build.
+ */
+function injectApiBase(html, apiBase) {
+  const m = html.match(API_TAG);
+  if (!m) {
+    throw new Error(
+      "Couldn't find the api.js <script> tag in app.html — the API base has " +
+      "nowhere to go, and every request in the bundled app would resolve " +
+      "against the webview."
+    );
+  }
+  // A second pass must not stack a second global.
+  if (html.includes("PYTHIA_API_BASE")) return html;
+
+  const [tag, indent] = [m[0], m[1]];
+  return html.replace(
+    tag,
+    `${indent}<script>window.PYTHIA_API_BASE = ${JSON.stringify(apiBase)};</script>\n${tag}`
+  );
+}
+
+function main() {
 if (!fs.existsSync(SRC)) {
   console.error(`✗ No public/ directory at ${SRC}`);
   process.exit(1);
@@ -54,17 +87,7 @@ if (!fs.existsSync(appHtml)) {
 let html = fs.readFileSync(appHtml, "utf8");
 
 // Tell the frontend where the API lives, before api.js reads it.
-const ANCHOR = '<script src="api.js">';
-if (!html.includes(ANCHOR)) {
-  console.error("✗ Couldn't find api.js in app.html — the API base has nowhere to go.");
-  process.exit(1);
-}
-if (!html.includes("PYTHIA_API_BASE")) {
-  html = html.replace(
-    ANCHOR,
-    `<script>window.PYTHIA_API_BASE = ${JSON.stringify(API_BASE)};</script>\n    ${ANCHOR}`
-  );
-}
+html = injectApiBase(html, API_BASE);
 
 fs.writeFileSync(path.join(OUT, "index.html"), html);
 fs.rmSync(appHtml);
@@ -77,3 +100,15 @@ const count = (function walk(dir) {
 console.log(`✓ Synced ${count} files into mobile/www`);
 console.log(`  entry point : app.html → index.html`);
 console.log(`  API base    : ${API_BASE}`);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (err) {
+    console.error(`✗ ${err.message}`);
+    process.exit(1);
+  }
+}
+
+module.exports = { injectApiBase };
