@@ -83,6 +83,31 @@ function patchManifest(xml) {
 const ANDROID_DIR = path.join(__dirname, "android");
 const MANIFEST = path.join(ANDROID_DIR, "app", "src", "main", "AndroidManifest.xml");
 
+// Firebase config. app/build.gradle applies the google-services plugin only if
+// this file is present in app/, so without it FirebaseApp never initialises —
+// and the crash is not a quiet loss of push. PushNotifications.register()
+// throws IllegalStateException on the CapacitorPlugins thread, which is a FATAL
+// EXCEPTION: the app dies about three seconds after launch, every launch, with
+// nothing on screen to say why. No JS try/catch can catch it.
+const GS_NAME = "google-services.json";
+const GS_SRC = path.join(__dirname, GS_NAME);
+const GS_DEST = path.join(ANDROID_DIR, "app", GS_NAME);
+
+function copyGoogleServices() {
+  if (!fs.existsSync(GS_SRC)) {
+    console.log(`• No ${GS_NAME} in mobile/ — push is off and the app will crash on launch`);
+    console.log("  if the frontend calls PushNotifications.register().");
+    return;
+  }
+  const src = fs.readFileSync(GS_SRC);
+  if (fs.existsSync(GS_DEST) && fs.readFileSync(GS_DEST).equals(src)) {
+    console.log(`✓ ${GS_NAME} already in place.`);
+    return;
+  }
+  fs.writeFileSync(GS_DEST, src);
+  console.log(`✓ Copied ${GS_NAME} into android/app.`);
+}
+
 function main() {
   // Legitimate: `npm run sync` is run before the native project exists, and on
   // machines that only ever build the website. Not an error, but say so —
@@ -104,11 +129,12 @@ function main() {
 
   if (!added.length) {
     console.log("✓ Microphone permissions already declared.");
-    return;
+  } else {
+    fs.writeFileSync(MANIFEST, xml);
+    console.log(`✓ Added to AndroidManifest.xml: ${added.join(", ")}`);
   }
 
-  fs.writeFileSync(MANIFEST, xml);
-  console.log(`✓ Added to AndroidManifest.xml: ${added.join(", ")}`);
+  copyGoogleServices();
 }
 
 if (require.main === module) {

@@ -85,15 +85,58 @@ no-op, a manifest already holding one gains only the other, and a manifest
 without the anchor throws rather than writing something plausible.
 
 What the tests cannot cover is whether audio actually captures on a device.
-That is a physical claim, and this change does not prove it — it makes it
-testable. The gate before this branch merges is a real call from a real Android
-build: the prompt appears, Allow is tapped, and Pythia is audible and hears the
-caller. Denying at the prompt should produce the Settings message, not a stall.
+That is a physical claim, and it has now been made: on a Galaxy A52s
+(SM-A528B, Android 14), the prompt appeared, Allow was tapped, and Pythia both
+heard the caller and answered. Voice works in the app.
 
-## Still open after this
+The permission dump on that device is the argument for the second permission,
+stated by the platform rather than by us:
+
+```
+MODIFY_AUDIO_SETTINGS: granted=true      ← normal permission, auto-granted because declared
+RECORD_AUDIO:          granted=false     ← dangerous, awaiting the runtime prompt
+```
+
+Undeclared, `MODIFY_AUDIO_SETTINGS` reads `false`, and Capacitor's all-must-be-true
+check denies the call after the caller has already tapped Allow.
+
+## What the first real build turned up
+
+Two things stood between a correct manifest and a working app, neither of them
+about the microphone.
+
+**The app died three seconds after launch, every launch.**
+`PushNotifications.register()` throws `IllegalStateException: Default
+FirebaseApp is not initialized` because `app/build.gradle` applies the
+google-services plugin only when `google-services.json` is present in `app/` —
+and it was sitting in `mobile/`. It surfaces as a FATAL EXCEPTION on the
+CapacitorPlugins thread, so no JS `try/catch` reaches it, and nothing on screen
+says what happened. `patch-android.js` now copies the file for the same reason
+it patches the manifest: `android/` is generated, so anything it needs must
+come from a directory that is committed.
+
+**Google sign-in cannot work in the webview.** `app.html` renders the button as
+`<a href="/api/auth/google">`, and an anchor bypasses the `fetch` patch in
+`api.js`, so the webview resolves it against its own bundle:
+
+```
+D/Capacitor: Handling local request: https://localhost/api/auth/google
+```
+
+Pointing the href at `PythiaAuth.apiBase` fixes the navigation and not the
+problem — Google returns `disallowed_useragent` for OAuth in an embedded
+webview. The real fix is a Custom Tab plus a deep-link return carrying the
+bearer token, which needs the intent filter and `assetlinks.json` already
+listed in the mobile README. Not done here. Until it is, the app can only be
+signed into by a method that goes through `fetch`.
+
+## Still open
 
 - iOS. `NSMicrophoneUsageDescription` in `Info.plist` is the equivalent, and
   the same argument applies, but no `ios/` project exists and it needs macOS to
   generate. The patcher covers Android only, and says so.
-- `google-services.json` still sits in `mobile/` rather than `android/app/`,
-  where push would need it. Unrelated to voice, and untouched here.
+- Google sign-in in the app, per above. It is the only login method prod
+  accepts, so the app is unusable for real users until it lands.
+- The Gradle wrapper needed a local distribution and a JDK override to build on
+  this machine. Both live in git-ignored `android/`, so they are not durable;
+  if the next build fails at Gradle, that is why.

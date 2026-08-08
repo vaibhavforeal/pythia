@@ -180,9 +180,15 @@ Voice Live tier table, so there is no other way to learn the rate.
   period at the SDP exchange. WebRTC keeps audio off the server, so Starter is
   enough — free is not.
 - `VOICE_MINUTES_PER_DAY` is a guess until a real call is costed.
-- The mic button now shows in the Capacitor shell, and `mobile/patch-android.js`
+- Voice now works in the Android app, proven on a Galaxy A52s: the prompt
+  appears, and Pythia hears the caller and answers. `mobile/patch-android.js`
   declares the two permissions Capacitor needs — `RECORD_AUDIO` alone is not
-  enough, see the 2026-08-08 design doc. Unproven on hardware: a real call from
-  an Android build is the gate before this branch merges. iOS is untouched.
+  enough — see the 2026-08-08 design doc. iOS is untouched.
+- Two of the five preconditions in `render.yaml` are still unmet with voice
+  live: a real call's cost has not been read from Azure Cost Management, and
+  the care protocol has not been walked through out loud. `VOICE_ALLOWLIST` is
+  what makes that safe, and it now fails closed — empty admits nobody, and
+  opening voice to everyone takes the sentinel `*`. Do not set it until both
+  are done.
 - The two `en-IN` voices were chosen without hearing them. Azure's HD variants
   are a config string away and are the cheapest quality win available.
