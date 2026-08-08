@@ -53,8 +53,18 @@ services:
       #      Starter is enough — but free is not.
       #   5. The care protocol has been walked through out loud (see
       #      SPOKEN_CARE_ADDENDUM in server/prompts.js).
+      #
+      # Switched on for a ONE-USER PILOT with 3, 4 and 5 still outstanding. That
+      # is only safe because VOICE_ALLOWLIST names a single test account, so no
+      # real caller can reach an unmeasured cost or an unrehearsed care
+      # protocol.
+      #
+      # VOICE_ALLOWLIST fails CLOSED: unset or empty admits nobody, so this
+      # toggle landing before the dashboard value is a dead feature rather than
+      # an open one. Opening voice to everyone takes the explicit sentinel "*",
+      # which should not be set until 3, 4 and 5 are actually met.
       - key: VOICE_ENABLED
-        value: "false"
+        value: "true"
       - key: VOICE_DEPLOYMENT
         sync: false          # a fast Claude deployment; NOT the one chat uses
       - key: VOICE_API_VERSION
