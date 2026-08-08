@@ -293,10 +293,24 @@ const STARTS_PER_HOUR = Number(process.env.VOICE_STARTS_PER_HOUR) || 6;
 const MAX_CONCURRENT = Number(process.env.VOICE_MAX_CONCURRENT) || 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Pilot gate. Empty means "everyone who passes the other limits".
-const ALLOWLIST = String(process.env.VOICE_ALLOWLIST || "")
-  .split(",").map(s => s.trim()).filter(Boolean);
-const allowed = userId => !ALLOWLIST.length || ALLOWLIST.includes(String(userId));
+// Pilot gate, and it FAILS CLOSED: unset or empty admits nobody. Opening voice
+// to everyone takes the explicit sentinel "*".
+//
+// The obvious reading — empty means no restriction — is how every other
+// allowlist in the world behaves, and it is wrong here for the same reason
+// MAX_CONCURRENT and MAX_SESSION_SEC fail closed: this is billed by the minute,
+// so the cost of being wrong is not a 500, it is an invoice. It also removes an
+// ordering hazard that no comment can fix — VOICE_ENABLED lives in render.yaml
+// and VOICE_ALLOWLIST is set in the dashboard, so a push can land before the
+// allowlist does. Fail-open, that window is "voice is live for every user".
+function isAllowed(userId, raw) {
+  const list = String(raw || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (list.includes("*")) return true;
+  return list.includes(String(userId));
+}
+
+const ALLOWLIST_RAW = process.env.VOICE_ALLOWLIST || "";
+const allowed = userId => isAllowed(userId, ALLOWLIST_RAW);
 
 // --- Live sessions -----------------------------------------------------------
 // In-memory → single-instance only, exactly like auth.rateLimiter. Correct on
@@ -673,6 +687,7 @@ module.exports = {
   toConversationMessages,
   signallingUrl,
   configured,
+  isAllowed,
   routes,
   _sessions
 };

@@ -50,6 +50,11 @@ test.before(async () => {
       // used — if one ever isn't, the test hangs on a real network call rather
       // than passing quietly.
       VOICE_ENABLED: "true",
+      // The allowlist fails closed, so an unset one would refuse every request
+      // here at the gate and quietly turn the assertions below into tests of
+      // the allowlist. The star is the explicit "everyone". See
+      // voice.allowlist.test.js for the gate itself.
+      VOICE_ALLOWLIST: "*",
       VOICE_DEPLOYMENT: "test-deployment",
       AZURE_INFERENCE_ENDPOINT: "https://example.invalid/anthropic/v1/messages",
       AZURE_INFERENCE_KEY: "not-a-real-key-and-must-never-be-echoed",
