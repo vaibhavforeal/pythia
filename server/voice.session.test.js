@@ -32,6 +32,31 @@ test("a session cannot be built without a chart", () => {
   assert.throws(() => voice.voiceInstructions(null), /no chart/);
 });
 
+test("the agent is told to answer in the caller's own language", () => {
+  // The session can HEAR Hindi — turn detection is the multilingual variant —
+  // but nothing made it REPLY in Hindi, so a caller speaking Hindi got English
+  // back. For this audience that is the difference between a product people use
+  // and one they try once.
+  assert.match(instructions, /answer in Hindi/i);
+  assert.match(instructions, /Hinglish/i);
+  // Mixing languages mid-sentence is how people actually talk here, and the
+  // model must not treat it as an error to be tidied up.
+  assert.match(instructions, /mix it back/i);
+  // Announcing the switch, or asking which language they'd prefer, breaks the
+  // illusion harder than answering in the wrong one.
+  assert.match(instructions, /Never announce the switch/i);
+});
+
+test("every voice on offer is an Indian one", () => {
+  // A US voice reading Sanskrit is its own kind of wrong, and the Hindi option
+  // exists because a voice is bound to the session and cannot switch mid-call.
+  for (const [key, name] of Object.entries(voice.VOICES)) {
+    assert.match(name, /^(en-IN|hi-IN)-/, `${key} is not an Indian voice: ${name}`);
+  }
+  assert.ok(Object.values(voice.VOICES).some(n => n.startsWith("hi-IN-")),
+    "no Hindi voice is offered at all");
+});
+
 test("the instructions carry the chart and the care protocol", () => {
   assert.ok(instructions.includes("=== CONSULTATION CHART (authoritative) ==="));
   assert.ok(instructions.includes("=== PRIMARY VARGAS"), "the domain verdicts are missing");
@@ -146,6 +171,7 @@ test("the caller picks a voice by key, never by name", () => {
   // upstream session object.
   assert.equal(voice.resolveVoice("calm"), "calm");
   assert.equal(voice.resolveVoice("warm"), "warm");
+  assert.equal(voice.resolveVoice("hindi"), "hindi");
   for (const junk of ["en-US-AvaNeural", "", null, undefined, 42, "__proto__", "toString"]) {
     assert.equal(voice.resolveVoice(junk), voice.DEFAULT_VOICE, `resolveVoice leaked on ${String(junk)}`);
   }

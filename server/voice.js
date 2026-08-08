@@ -58,15 +58,27 @@ const DEPLOYMENT = process.env.VOICE_DEPLOYMENT || process.env.AZURE_DEPLOYMENT;
 const KEY = process.env.VOICE_KEY || process.env.AZURE_INFERENCE_KEY;
 
 /**
- * One persona, two voices.
+ * One persona, three voices.
  *
- * The character is the same either way — this is a voice preference, not a
- * choice between astrologers. Indian-English throughout, because that is who
- * this is for and a US voice reading Sanskrit is its own kind of wrong.
+ * The character is the same in each — this is a voice preference, not a choice
+ * between astrologers. All Indian: a US voice reading Sanskrit is its own kind
+ * of wrong.
+ *
+ * The `hindi` option exists because a voice is bound to the session and cannot
+ * change mid-call, while SPOKEN_NOTE tells the agent to answer in whichever
+ * language the caller uses. An en-IN voice reading a Hindi sentence is audibly
+ * an English speaker attempting Hindi, which is worse than not offering it.
+ *
+ * The better answer is one MULTILINGUAL voice that handles both and removes the
+ * choice entirely — Azure has them, and swapping is a config string. These
+ * defaults were picked without hearing them; audition with
+ * `node tools/voice-spike.js --voice <name>` and keep what sounds like a
+ * person rather than an announcer.
  */
 const VOICES = {
   warm: process.env.VOICE_NAME_WARM || "en-IN-NeerjaNeural",
-  calm: process.env.VOICE_NAME_CALM || "en-IN-PrabhatNeural"
+  calm: process.env.VOICE_NAME_CALM || "en-IN-PrabhatNeural",
+  hindi: process.env.VOICE_NAME_HINDI || "hi-IN-SwaraNeural"
 };
 const DEFAULT_VOICE = "warm";
 
