@@ -39,6 +39,20 @@ const arg = (f, d) => (argv.includes(f) ? argv[argv.indexOf(f) + 1] : d);
 const PORT = 39778;
 const SLOW = has("--slow");
 const VOICE = arg("--voice", "en-IN-NeerjaNeural");
+// Prosody knobs, UNPROVEN against this api-version — which is exactly why they
+// live here and not in server/voice.js. Two fields taken from the docs without
+// a spike run were what made a real call connect and then never speak, so
+// nothing new reaches production until it has answered a question out loud.
+//
+//   --style chat        Azure voice styles. "chat" is built for conversation;
+//                       most en-IN/hi-IN neural voices also take "empathetic",
+//                       "cheerful", "newscast". This is the single biggest
+//                       prosody lever available.
+//   --rate -8%          Speaking rate. Standard voices read slightly fast for
+//                       conversation; a touch slower reads as considered
+//                       rather than as a recording.
+const STYLE = arg("--style", "");
+const RATE = arg("--rate", "");
 const MODEL = arg("--model", process.env.VOICE_DEPLOYMENT || process.env.AZURE_DEPLOYMENT);
 const KEY = process.env.VOICE_KEY || process.env.AZURE_INFERENCE_KEY;
 const PROFILE = "byom-foundry-anthropic-messages";
@@ -296,7 +310,12 @@ function sessionConfig() {
     modalities: ["text", "audio"],
     instructions: INSTRUCTIONS,
     // Azure neural TTS, because a BYOM text model has no native audio output.
-    voice: { type: "azure-standard", name: VOICE },
+    voice: {
+      type: "azure-standard",
+      name: VOICE,
+      ...(STYLE ? { style: STYLE } : {}),
+      ...(RATE ? { rate: RATE } : {})
+    },
     // Multilingual, so a caller code-switching into Hindi mid-sentence is still
     // segmented correctly — one of the reasons for choosing Voice Live at all.
     turn_detection: {
