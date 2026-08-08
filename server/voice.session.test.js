@@ -32,6 +32,25 @@ test("a session cannot be built without a chart", () => {
   assert.throws(() => voice.voiceInstructions(null), /no chart/);
 });
 
+test("the agent is told not to talk like customer service", () => {
+  // "The tone doesn't seem human" was the first thing said about a working
+  // call, and the transcripts showed why: "Hello, welcome! I'm so glad you
+  // called. Feel free to ask me anything about your Vedic birth chart."
+  // Grammatical, warm, on-topic, and instantly recognisable as a machine.
+  //
+  // Naming the tics individually matters. An instruction to "sound natural"
+  // produces a model performing naturalness, which is worse.
+  for (const tic of ["Welcome!", "I'm so glad you called", "Feel free to ask me anything",
+                     "How can I help you today?", "Great question"]) {
+    assert.ok(instructions.includes(tic), `the banned-phrase list has lost "${tic}"`);
+  }
+  assert.match(instructions, /DON'T OFFER TO HELP/i);
+  assert.match(instructions, /DON'T END EVERY TURN WITH A QUESTION/i);
+  assert.match(instructions, /CONTRACTIONS/i);
+  // The opening is the one moment that proves the chart is real.
+  assert.match(instructions, /OPEN WITH SOMETHING ONLY YOU COULD KNOW/i);
+});
+
 test("the agent is told to answer in the caller's own language", () => {
   // The session can HEAR Hindi — turn detection is the multilingual variant —
   // but nothing made it REPLY in Hindi, so a caller speaking Hindi got English
@@ -128,7 +147,8 @@ test("the per-turn instruction budget holds", () => {
   // string is paid for on every turn of every call. Measured baselines:
   //
   //   chat blocks + full chartToText   29,465 B   ~7,366 tok   (~147k per 20 turns)
-  //   spoken blocks + spoken chart     23,632 B   ~5,908 tok   (~118k per 20 turns)
+  //   spoken, before HUMAN_NOTE        23,632 B   ~5,908 tok   (~118k per 20 turns)
+  //   spoken, current                  26,266 B   ~6,566 tok   (~131k per 20 turns)
   //
   // If this fails, something large came back. The likely culprits are the 16
   // supplementary divisionals (2,349 B) or the ashtakavarga grids (1,005 B),

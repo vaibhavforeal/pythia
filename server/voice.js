@@ -16,7 +16,7 @@
 
 const { chartToSpokenText, chartDetail, DETAIL_TOPICS } = require("./astro");
 const {
-  SKILL_PROMPT_SPOKEN, SPOKEN_BEHAVIOUR_NOTE, SPOKEN_NOTE,
+  SKILL_PROMPT_SPOKEN, SPOKEN_BEHAVIOUR_NOTE, SPOKEN_NOTE, HUMAN_NOTE,
   REGISTER_NOTE, SPOKEN_CARE_NOTE, GROUNDING_NOTE
 } = require("./prompts");
 
@@ -175,6 +175,7 @@ function voiceInstructions(chart) {
     SKILL_PROMPT_SPOKEN,
     SPOKEN_BEHAVIOUR_NOTE,
     SPOKEN_NOTE,
+    HUMAN_NOTE,
     REGISTER_NOTE,
     SPOKEN_CARE_NOTE,
     "=== CONSULTATION CHART (authoritative) ===\n" + chartToSpokenText(chart),
@@ -183,10 +184,22 @@ function voiceInstructions(chart) {
 }
 
 // Re-sent to the model on EVERY turn, so this is a per-turn tax rather than a
-// one-off. Measured at 23,632 B for the fixture chart; the ceiling leaves room
-// for a chart with more yogas and conjunctions without leaving room for someone
-// to quietly paste the full varga tables back in. See voice.session.test.js.
-const MAX_INSTRUCTION_BYTES = 26000;
+// one-off. The ceiling leaves room for a chart with more yogas and conjunctions
+// without leaving room for someone to quietly paste the full varga tables back
+// in. See voice.session.test.js.
+//
+// Raised 26,000 -> 27,500 to fit HUMAN_NOTE (1,781 B). Recorded rather than
+// quietly bumped, because this is a bill:
+//
+//   23,632 B  ~5,908 tok/turn   before
+//   26,266 B  ~6,566 tok/turn   after   (~131k per 20-turn call)
+//
+// Worth it. "The tone doesn't seem human" was the first thing said about a
+// working call, and sounding like a person IS the product here — it is the only
+// thing separating this from a text chat with a speaker attached. The guard is
+// meant to catch an accidental regression, not to veto a reviewed change; what
+// it must never allow is a silent one.
+const MAX_INSTRUCTION_BYTES = 27500;
 
 /**
  * The `session` object sent to Voice Live.
