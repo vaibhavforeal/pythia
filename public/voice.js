@@ -106,9 +106,14 @@
     } catch (err) {
       // These need different instructions, so they get different messages.
       if (err && err.name === "NotAllowedError") {
-        fail("Microphone blocked",
-          "Allow the microphone for this site — the padlock in the address bar on desktop, " +
-          "or Settings › Safari › Microphone on iPhone — then try again.");
+        // Where the permission is re-granted differs entirely between the two
+        // builds, and sending someone to the address bar of an app that has no
+        // address bar is worse than saying nothing.
+        const native = window.PythiaAuth && window.PythiaAuth.native;
+        fail("Microphone blocked", native
+          ? "Turn the microphone on in Settings › Apps › Pythia › Permissions, then try again."
+          : "Allow the microphone for this site — the padlock in the address bar on desktop, " +
+            "or Settings › Safari › Microphone on iPhone — then try again.");
       } else if (err && err.name === "NotFoundError") {
         fail("No microphone found", "Plug one in or switch to a device with a mic, then try again.");
       } else {
@@ -259,12 +264,6 @@
   function init() {
     const mic = $("micBtn");
     if (!mic) return;
-
-    // The Capacitor shell has no android/ or ios/ project committed, so it has
-    // no RECORD_AUDIO permission and getUserMedia would fail after the overlay
-    // had already opened. Hide the button there until a native project exists.
-    const native = window.PythiaAuth && window.PythiaAuth.native;
-    if (native) { mic.hidden = true; return; }
 
     mic.addEventListener("click", start);
     const endBtn = $("callEnd");

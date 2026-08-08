@@ -180,8 +180,9 @@ Voice Live tier table, so there is no other way to learn the rate.
   period at the SDP exchange. WebRTC keeps audio off the server, so Starter is
   enough — free is not.
 - `VOICE_MINUTES_PER_DAY` is a guess until a real call is costed.
-- The mic button is hidden in the Capacitor shell. No `android/` or `ios/`
-  project is committed, so there is no `RECORD_AUDIO` permission and
-  `getUserMedia` would fail after the overlay had opened.
+- The mic button now shows in the Capacitor shell, and `mobile/patch-android.js`
+  declares the two permissions Capacitor needs — `RECORD_AUDIO` alone is not
+  enough, see the 2026-08-08 design doc. Unproven on hardware: a real call from
+  an Android build is the gate before this branch merges. iOS is untouched.
 - The two `en-IN` voices were chosen without hearing them. Azure's HD variants
   are a config string away and are the cheapest quality win available.

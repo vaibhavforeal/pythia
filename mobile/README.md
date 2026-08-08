@@ -29,9 +29,13 @@ token instead. The server supports both — see `server/auth.js`.
 cd mobile
 npm install
 npx cap add android          # creates mobile/android (git-ignored)
-npm run sync                 # copy public/ → www/, then cap sync
+npm run sync                 # copy public/ → www/, cap sync, patch the manifest
 npm run android              # opens Android Studio
 ```
+
+Order matters on a fresh clone: `npm run sync` can only patch the manifest once
+`cap add android` has generated one. It says so rather than failing, so run it
+again afterwards.
 
 Requires Android Studio and a JDK. `npx cap add ios` needs macOS and Xcode.
 
@@ -52,6 +56,20 @@ Point at a different backend with:
 ```bash
 PYTHIA_API_BASE=https://staging.pythia.cyou npm run sync
 ```
+
+## The microphone
+
+Voice calls need `RECORD_AUDIO` *and* `MODIFY_AUDIO_SETTINGS` in the manifest.
+Capacitor requests both when the webview asks for audio and denies the call if
+either is missing, so declaring only the obvious one produces a prompt the
+caller accepts and a denial they can't explain.
+
+`patch-android.js` adds them on every sync, because `android/` is git-ignored
+and a hand-edit there lasts exactly until someone regenerates the project. See
+`docs/superpowers/specs/2026-08-08-capacitor-mic-permission-design.md`.
+
+iOS will need `NSMicrophoneUsageDescription` in `Info.plist`. Not handled —
+there's no `ios/` project to patch yet.
 
 ## Still to wire up
 

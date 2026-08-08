@@ -4,7 +4,7 @@
   "private": true,
   "description": "Capacitor shell that ships the Pythia frontend to the Play Store.",
   "scripts": {
-    "sync": "node sync-web.js && cap sync",
+    "sync": "node sync-web.js && cap sync && node patch-android.js",
     "android": "npm run sync && cap open android",
     "ios": "npm run sync && cap open ios",
     "build:apk": "npm run sync && cd android && gradlew.bat assembleRelease",
