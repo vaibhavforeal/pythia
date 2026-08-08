@@ -44,15 +44,64 @@ const VOICE = arg("--voice", "en-IN-NeerjaNeural");
 // a spike run were what made a real call connect and then never speak, so
 // nothing new reaches production until it has answered a question out loud.
 //
-//   --style chat        Azure voice styles. "chat" is built for conversation;
-//                       most en-IN/hi-IN neural voices also take "empathetic",
-//                       "cheerful", "newscast". This is the single biggest
-//                       prosody lever available.
+//   --style empathetic  Azure voice styles, and they are PER VOICE — a style the
+//                       voice does not declare is not a soft failure to fall
+//                       back from, it is a field the service may reject. The
+//                       "chat" style this file first suggested does not exist on
+//                       any en-IN or hi-IN voice; it is a zh-CN style. Run
+//                       --list for what each candidate actually accepts.
 //   --rate -8%          Speaking rate. Standard voices read slightly fast for
 //                       conversation; a touch slower reads as considered
 //                       rather than as a recording.
 const STYLE = arg("--style", "");
 const RATE = arg("--rate", "");
+
+// Audition shortlist, from the Azure language-support tables (2026-08-08). The
+// point of writing it down is that the names are unguessable and the styles are
+// per voice, so auditioning from memory means testing combinations that were
+// never going to work and reading the silence as "this voice sounds bad".
+//
+// UNPROVEN: whether Voice Live's `voice.type: "azure-standard"` accepts the HD
+// names at all, and whether it accepts `style` and `rate` on this api-version.
+// That is what this spike is for. If an HD name connects and never speaks, try
+// it without --style before concluding the voice is unavailable.
+const CANDIDATES = [
+  // --- English (India), Neural HD. The upgrade path: same personas, better
+  // model. Styles are documented as available on all English content for all HD
+  // voices, along with paralinguistics (breathing, sighing) — which is the only
+  // documented answer to "announcer prosody, never breathes".
+  ["en-IN-Neerja:DragonHDLatestNeural", "F", "HD build of the voice already in use — the like-for-like comparison"],
+  ["en-IN-Aarti:DragonHDLatestNeural", "F", "HD"],
+  ["en-IN-Meera:DragonHDLatestNeural", "F", "HD"],
+  ["en-IN-Diya:DragonHDLatestNeural", "F", "HD"],
+  ["en-IN-Lavanya:DragonHDLatestNeural", "F", "HD"],
+  ["en-IN-Arjun:DragonHDLatestNeural", "M", "HD"],
+
+  // --- English (India), standard. Current default, and its styles.
+  ["en-IN-NeerjaNeural", "F", "current default — styles: cheerful, empathetic, newscast"],
+  ["en-IN-PrabhatNeural", "M", "current 'calm' — no styles"],
+
+  // --- Hindi. There is NO DragonHD for hi-IN. The expressive family is
+  // MAI-Voice-2, which carries a much wider style set than SwaraNeural's three.
+  ["hi-IN-Kavya:MAI-Voice-2", "F", "styles incl. hopeful, relieved, softvoice, whispering"],
+  ["hi-IN-Priya:MAI-Voice-2", "F", "same style set as Kavya"],
+  ["hi-IN-Dhruv:MAI-Voice-2", "M", "same style set"],
+  ["hi-IN-SwaraNeural", "F", "current Hindi default — styles: cheerful, empathetic, newscast"]
+];
+
+if (has("--list")) {
+  console.log("\n  Audition candidates — pass one to --voice:\n");
+  for (const [name, gender, note] of CANDIDATES) {
+    console.log(`    ${name.padEnd(38)} ${gender}  ${note}`);
+  }
+  console.log(
+    "\n  Styles are per voice. 'chat' does not exist on en-IN or hi-IN.\n" +
+    "  For the standard voices the conversational one is 'empathetic'.\n\n" +
+    "    node tools/voice-spike.js --voice en-IN-Neerja:DragonHDLatestNeural\n" +
+    "    node tools/voice-spike.js --voice en-IN-NeerjaNeural --style empathetic --rate \"-8%\"\n"
+  );
+  process.exit(0);
+}
 const MODEL = arg("--model", process.env.VOICE_DEPLOYMENT || process.env.AZURE_DEPLOYMENT);
 const KEY = process.env.VOICE_KEY || process.env.AZURE_INFERENCE_KEY;
 const PROFILE = "byom-foundry-anthropic-messages";
